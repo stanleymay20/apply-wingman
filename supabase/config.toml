@@ -1,1 +1,10 @@
 project_id = "jlsoiujwcjgmvijcmvas"
+
+[functions.parse-cv]
+verify_jwt = false
+
+[functions.match-job]
+verify_jwt = false
+
+[functions.generate-cover-letter]
+verify_jwt = false

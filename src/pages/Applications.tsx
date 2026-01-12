@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { 
   Search, 
-  Filter, 
   Download, 
   ExternalLink,
-  ChevronDown,
   Building2,
   MapPin,
   Calendar,
-  Percent
+  Percent,
+  Loader2,
+  Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,132 +20,85 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-interface Application {
-  id: string;
-  company: string;
-  role: string;
-  location: string;
-  platform: string;
-  jobUrl: string;
-  matchScore: number;
-  status: "applied" | "interview" | "rejected" | "pending";
-  appliedAt: string;
-  method: string;
-}
-
-const applications: Application[] = [
-  {
-    id: "1",
-    company: "TechCorp GmbH",
-    role: "Senior Data Engineer",
-    location: "Berlin, Germany",
-    platform: "LinkedIn",
-    jobUrl: "#",
-    matchScore: 94,
-    status: "interview",
-    appliedAt: "2025-01-12 10:30",
-    method: "Easy Apply",
-  },
-  {
-    id: "2",
-    company: "AI Solutions AG",
-    role: "Machine Learning Engineer",
-    location: "Munich, Germany",
-    platform: "Greenhouse",
-    jobUrl: "#",
-    matchScore: 89,
-    status: "applied",
-    appliedAt: "2025-01-12 08:15",
-    method: "Direct Form",
-  },
-  {
-    id: "3",
-    company: "DataFlow Inc",
-    role: "Analytics Lead",
-    location: "Remote (EU)",
-    platform: "Indeed",
-    jobUrl: "#",
-    matchScore: 86,
-    status: "applied",
-    appliedAt: "2025-01-12 07:45",
-    method: "Easy Apply",
-  },
-  {
-    id: "4",
-    company: "Growth Dynamics",
-    role: "Growth Data Analyst",
-    location: "Hamburg, Germany",
-    platform: "Company Site",
-    jobUrl: "#",
-    matchScore: 82,
-    status: "pending",
-    appliedAt: "2025-01-12 06:20",
-    method: "Email",
-  },
-  {
-    id: "5",
-    company: "StartupXYZ",
-    role: "Data Scientist",
-    location: "Frankfurt, Germany",
-    platform: "Lever",
-    jobUrl: "#",
-    matchScore: 78,
-    status: "rejected",
-    appliedAt: "2025-01-11 14:30",
-    method: "Direct Form",
-  },
-  {
-    id: "6",
-    company: "CloudTech Solutions",
-    role: "Data Platform Lead",
-    location: "Berlin, Germany",
-    platform: "LinkedIn",
-    jobUrl: "#",
-    matchScore: 91,
-    status: "applied",
-    appliedAt: "2025-01-11 11:00",
-    method: "Easy Apply",
-  },
-  {
-    id: "7",
-    company: "FinanceAI",
-    role: "Senior ML Engineer",
-    location: "Remote",
-    platform: "Greenhouse",
-    jobUrl: "#",
-    matchScore: 88,
-    status: "interview",
-    appliedAt: "2025-01-11 09:30",
-    method: "Direct Form",
-  },
-  {
-    id: "8",
-    company: "AutomateNow",
-    role: "Automation Engineer",
-    location: "Munich, Germany",
-    platform: "Indeed",
-    jobUrl: "#",
-    matchScore: 85,
-    status: "applied",
-    appliedAt: "2025-01-10 16:45",
-    method: "Easy Apply",
-  },
-];
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { useApplications } from "@/hooks/useApplications";
+import { useJobs } from "@/hooks/useJobs";
+import { toast } from "sonner";
 
 export default function Applications() {
+  const { applications, isLoading } = useApplications();
+  const { createJob, isLoading: jobsLoading } = useJobs();
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [isAddingJob, setIsAddingJob] = useState(false);
+  const [newJob, setNewJob] = useState({
+    title: "",
+    company: "",
+    source_url: "",
+    source_platform: "linkedin" as const,
+  });
 
   const filteredApplications = applications.filter((app) => {
+    const job = app.job;
     const matchesSearch = 
-      app.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      app.company.toLowerCase().includes(searchQuery.toLowerCase());
+      (job?.title?.toLowerCase().includes(searchQuery.toLowerCase()) || false) ||
+      (job?.company?.toLowerCase().includes(searchQuery.toLowerCase()) || false);
     const matchesStatus = statusFilter === "all" || app.status === statusFilter;
-    const matchesPlatform = platformFilter === "all" || app.platform === platformFilter;
+    const matchesPlatform = platformFilter === "all" || job?.source_platform === platformFilter;
     return matchesSearch && matchesStatus && matchesPlatform;
   });
+
+  const handleAddJob = () => {
+    if (!newJob.title || !newJob.company || !newJob.source_url) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    
+    createJob(newJob);
+    setNewJob({ title: "", company: "", source_url: "", source_platform: "linkedin" });
+    setIsAddingJob(false);
+  };
+
+  const exportToCSV = () => {
+    const headers = ["Role", "Company", "Location", "Platform", "Match Score", "Status", "Applied At"];
+    const rows = filteredApplications.map(app => [
+      app.job?.title || "",
+      app.job?.company || "",
+      app.job?.location || "",
+      app.job?.source_platform || "",
+      app.match_score,
+      app.status,
+      app.applied_at || "",
+    ]);
+    
+    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `applications-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Applications exported to CSV");
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -176,10 +129,11 @@ export default function Applications() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="applied">Applied</SelectItem>
+              <SelectItem value="submitted">Submitted</SelectItem>
               <SelectItem value="interview">Interview</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="offer">Offer</SelectItem>
             </SelectContent>
           </Select>
 
@@ -189,17 +143,82 @@ export default function Applications() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Platforms</SelectItem>
-              <SelectItem value="LinkedIn">LinkedIn</SelectItem>
-              <SelectItem value="Indeed">Indeed</SelectItem>
-              <SelectItem value="Greenhouse">Greenhouse</SelectItem>
-              <SelectItem value="Lever">Lever</SelectItem>
-              <SelectItem value="Company Site">Company Site</SelectItem>
+              <SelectItem value="linkedin">LinkedIn</SelectItem>
+              <SelectItem value="indeed">Indeed</SelectItem>
+              <SelectItem value="greenhouse">Greenhouse</SelectItem>
+              <SelectItem value="lever">Lever</SelectItem>
+              <SelectItem value="company_website">Company Site</SelectItem>
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon">
+          <Button variant="outline" size="icon" onClick={exportToCSV} title="Export CSV">
             <Download className="w-4 h-4" />
           </Button>
+
+          <Dialog open={isAddingJob} onOpenChange={setIsAddingJob}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Job
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Job Manually</DialogTitle>
+                <DialogDescription>
+                  Add a job posting to track and match against your profile
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <div>
+                  <Label>Job Title *</Label>
+                  <Input
+                    placeholder="Senior Data Engineer"
+                    value={newJob.title}
+                    onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Company *</Label>
+                  <Input
+                    placeholder="TechCorp GmbH"
+                    value={newJob.company}
+                    onChange={(e) => setNewJob({ ...newJob, company: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Job URL *</Label>
+                  <Input
+                    placeholder="https://..."
+                    value={newJob.source_url}
+                    onChange={(e) => setNewJob({ ...newJob, source_url: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Platform</Label>
+                  <Select 
+                    value={newJob.source_platform} 
+                    onValueChange={(v) => setNewJob({ ...newJob, source_platform: v as typeof newJob.source_platform })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="linkedin">LinkedIn</SelectItem>
+                      <SelectItem value="indeed">Indeed</SelectItem>
+                      <SelectItem value="greenhouse">Greenhouse</SelectItem>
+                      <SelectItem value="lever">Lever</SelectItem>
+                      <SelectItem value="company_website">Company Site</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={handleAddJob} className="w-full" disabled={jobsLoading}>
+                  Add Job
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -222,47 +241,54 @@ export default function Applications() {
               {filteredApplications.map((app, index) => (
                 <tr 
                   key={app.id} 
-                  className="table-row animate-slide-in"
+                  className="table-row animate-slide-in border-b border-border/30 last:border-0"
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <td className="p-4">
                     <div>
-                      <p className="font-medium text-foreground">{app.role}</p>
+                      <p className="font-medium text-foreground">{app.job?.title || 'Unknown'}</p>
                       <div className="flex items-center gap-1 text-sm text-muted-foreground">
                         <Building2 className="w-3 h-3" />
-                        {app.company}
+                        {app.job?.company || 'Unknown'}
                       </div>
                     </div>
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <MapPin className="w-3 h-3" />
-                      {app.location}
+                      {app.job?.location || 'Remote'}
                     </div>
                   </td>
                   <td className="p-4">
-                    <span className="text-sm text-foreground">{app.platform}</span>
-                    <p className="text-xs text-muted-foreground">{app.method}</p>
+                    <span className="text-sm text-foreground capitalize">
+                      {app.job?.source_platform?.replace('_', ' ') || 'Unknown'}
+                    </span>
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-2">
                       <Percent className="w-3 h-3 text-primary" />
-                      <span className="font-medium text-primary">{app.matchScore}%</span>
+                      <span className="font-medium text-primary">{app.match_score}%</span>
                     </div>
                   </td>
                   <td className="p-4">
-                    <StatusBadge status={app.status} />
+                    <StatusBadge status={app.status as "applied" | "interview" | "rejected" | "pending"} />
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <Calendar className="w-3 h-3" />
-                      {new Date(app.appliedAt).toLocaleDateString()}
+                      {app.applied_at 
+                        ? new Date(app.applied_at).toLocaleDateString()
+                        : 'Pending'}
                     </div>
                   </td>
                   <td className="p-4 text-right">
-                    <Button variant="ghost" size="sm">
-                      <ExternalLink className="w-4 h-4" />
-                    </Button>
+                    {app.job?.source_url && (
+                      <a href={app.job.source_url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="sm">
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                      </a>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -272,24 +298,20 @@ export default function Applications() {
 
         {filteredApplications.length === 0 && (
           <div className="p-12 text-center">
-            <p className="text-muted-foreground">No applications match your filters</p>
+            <p className="text-muted-foreground">
+              {applications.length === 0 
+                ? "No applications yet. Add jobs or start automation to begin."
+                : "No applications match your filters"}
+            </p>
           </div>
         )}
       </div>
 
-      {/* Pagination */}
+      {/* Stats */}
       <div className="flex items-center justify-between mt-6 animate-fade-in">
         <p className="text-sm text-muted-foreground">
           Showing {filteredApplications.length} of {applications.length} applications
         </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled>
-            Previous
-          </Button>
-          <Button variant="outline" size="sm">
-            Next
-          </Button>
-        </div>
       </div>
     </div>
   );

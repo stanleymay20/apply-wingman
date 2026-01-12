@@ -4,21 +4,37 @@ import {
   UserCheck, 
   TrendingUp,
   Calendar,
-  Clock
+  Clock,
+  Loader2
 } from "lucide-react";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { QuotaProgress } from "@/components/dashboard/QuotaProgress";
 import { AutomationToggle } from "@/components/dashboard/AutomationToggle";
 import { RecentApplications } from "@/components/dashboard/RecentApplications";
 import { ApplicationFunnel } from "@/components/dashboard/ApplicationFunnel";
+import { useDashboardStats } from "@/hooks/useDashboardStats";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Dashboard() {
+  const { profile } = useAuth();
+  const { data: stats, isLoading } = useDashboardStats();
+
   const today = new Date().toLocaleDateString('en-US', { 
     weekday: 'long', 
     year: 'numeric', 
     month: 'long', 
     day: 'numeric' 
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const remaining = (stats?.dailyCap || 50) - (stats?.todayApplications || 0);
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -28,7 +44,9 @@ export default function Dashboard() {
           <Calendar className="w-4 h-4" />
           <span className="text-sm">{today}</span>
         </div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
+        <h1 className="text-3xl font-bold text-foreground mb-2">
+          Welcome back{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}
+        </h1>
         <p className="text-muted-foreground">
           Monitor your job application automation in real-time
         </p>
@@ -38,35 +56,31 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
           title="Applied Today"
-          value={37}
-          subtitle="13 remaining quota"
+          value={stats?.todayApplications || 0}
+          subtitle={`${remaining} remaining quota`}
           icon={Send}
           variant="primary"
-          trend={{ value: 12, isPositive: true }}
         />
         <StatsCard
           title="Total Applications"
-          value={312}
-          subtitle="This month"
+          value={stats?.totalApplications || 0}
+          subtitle="All time"
           icon={CheckCircle}
           variant="success"
-          trend={{ value: 8, isPositive: true }}
         />
         <StatsCard
           title="Interview Requests"
-          value={28}
-          subtitle="9% response rate"
+          value={stats?.interviews || 0}
+          subtitle={`${stats?.responseRate || 0}% response rate`}
           icon={UserCheck}
           variant="info"
-          trend={{ value: 15, isPositive: true }}
         />
         <StatsCard
           title="Avg. Match Score"
-          value="84%"
-          subtitle="Above threshold"
+          value={`${stats?.averageMatchScore || 0}%`}
+          subtitle={stats?.averageMatchScore >= 70 ? "Above threshold" : "Below threshold"}
           icon={TrendingUp}
           variant="warning"
-          trend={{ value: 3, isPositive: true }}
         />
       </div>
 
@@ -74,7 +88,10 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* Left Column - Quota & Control */}
         <div className="space-y-6">
-          <QuotaProgress current={37} max={50} />
+          <QuotaProgress 
+            current={stats?.todayApplications || 0} 
+            max={stats?.dailyCap || 50} 
+          />
           <AutomationToggle />
           
           {/* Next Scheduled Run */}
@@ -85,11 +102,15 @@ export default function Dashboard() {
               </div>
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground">Next Scan</h3>
-                <p className="text-lg font-semibold text-foreground">In 12 minutes</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {profile?.automation_status === 'running' ? 'In 12 minutes' : 'Paused'}
+                </p>
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Scanning LinkedIn, Indeed, and 3 company boards
+              {profile?.automation_status === 'running' 
+                ? 'Scanning LinkedIn, Indeed, and company boards'
+                : 'Start automation to begin scanning'}
             </p>
           </div>
         </div>

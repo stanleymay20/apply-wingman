@@ -1,12 +1,10 @@
-import { useState } from "react";
-import { Power, Pause, Play, AlertTriangle } from "lucide-react";
+import { Power, Pause, Play, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-type AutomationStatus = "running" | "paused" | "stopped";
+import { useAutomation } from "@/hooks/useAutomation";
 
 export function AutomationToggle() {
-  const [status, setStatus] = useState<AutomationStatus>("running");
+  const { status, isUpdating, toggleAutomation, emergencyStop } = useAutomation();
 
   const statusConfig = {
     running: {
@@ -37,16 +35,6 @@ export function AutomationToggle() {
 
   const config = statusConfig[status];
 
-  const toggleStatus = () => {
-    if (status === "running") setStatus("paused");
-    else if (status === "paused") setStatus("running");
-    else setStatus("running");
-  };
-
-  const emergencyStop = () => {
-    setStatus("stopped");
-  };
-
   return (
     <div className="glass-card p-6 animate-scale-in">
       <div className="flex items-center justify-between mb-6">
@@ -66,11 +54,14 @@ export function AutomationToggle() {
 
       <div className="flex gap-3">
         <Button
-          onClick={toggleStatus}
+          onClick={toggleAutomation}
           variant={status === "running" ? "outline" : "default"}
           className="flex-1"
+          disabled={isUpdating}
         >
-          {status === "running" ? (
+          {isUpdating ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : status === "running" ? (
             <>
               <Pause className="w-4 h-4 mr-2" />
               Pause
@@ -87,7 +78,7 @@ export function AutomationToggle() {
           onClick={emergencyStop}
           variant="destructive"
           size="icon"
-          disabled={status === "stopped"}
+          disabled={status === "stopped" || isUpdating}
           title="Emergency Stop"
         >
           <Power className="w-4 h-4" />
