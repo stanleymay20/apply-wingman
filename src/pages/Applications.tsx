@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { 
   Search, 
-  Download, 
   ExternalLink,
   Building2,
   MapPin,
@@ -10,8 +9,8 @@ import {
   Loader2,
   Plus,
   Briefcase,
-  FileText,
-  Sparkles
+  Sparkles,
+  Mail
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +40,8 @@ import { jobSchema } from "@/lib/validation";
 import { formatDistanceToNow } from "date-fns";
 import { DocumentRequestDialog } from "@/components/applications/DocumentRequestDialog";
 import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
+import { ExportButton } from "@/components/applications/ExportButton";
+import { ReferralEmailDialog } from "@/components/applications/ReferralEmailDialog";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
@@ -107,36 +108,6 @@ export default function Applications() {
     setIsAddingJob(false);
   };
 
-  const exportToCSV = () => {
-    if (filteredApplications.length === 0) {
-      toast.error("No applications to export");
-      return;
-    }
-    
-    const headers = ["Role", "Company", "Location", "Platform", "Match Score", "Status", "Applied At"];
-    const rows = filteredApplications.map(app => [
-      (app.job?.title || "").replace(/,/g, ";"),
-      (app.job?.company || "").replace(/,/g, ";"),
-      (app.job?.location || "").replace(/,/g, ";"),
-      (app.job?.source_platform || "").replace(/,/g, ";"),
-      app.match_score,
-      app.status || "",
-      app.applied_at || "",
-    ]);
-    
-    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `applications-${new Date().toISOString().split("T")[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Applications exported to CSV");
-  };
-
   if (isLoading) {
     return <LoadingSpinner fullPage text="Loading applications..." />;
   }
@@ -193,15 +164,7 @@ export default function Applications() {
             </SelectContent>
           </Select>
 
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={exportToCSV} 
-            title="Export CSV"
-            disabled={filteredApplications.length === 0}
-          >
-            <Download className="w-4 h-4" />
-          </Button>
+          <ExportButton />
 
           <Button variant="outline" onClick={() => setIsDiscovering(true)}>
             <Sparkles className="w-4 h-4 mr-2" />
@@ -369,18 +332,31 @@ export default function Applications() {
                         </div>
                       </td>
                       <td className="p-4 text-right">
-                        {app.job?.source_url && (
-                          <a 
-                            href={app.job.source_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            aria-label="View job posting"
-                          >
-                            <Button variant="ghost" size="sm">
-                              <ExternalLink className="w-4 h-4" />
-                            </Button>
-                          </a>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          <ReferralEmailDialog
+                            jobId={app.job_id}
+                            applicationId={app.id}
+                            company={app.job?.company || "Company"}
+                            jobTitle={app.job?.title || "Job"}
+                            trigger={
+                              <Button variant="ghost" size="sm" title="Send referral email">
+                                <Mail className="w-4 h-4" />
+                              </Button>
+                            }
+                          />
+                          {app.job?.source_url && (
+                            <a 
+                              href={app.job.source_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              aria-label="View job posting"
+                            >
+                              <Button variant="ghost" size="sm">
+                                <ExternalLink className="w-4 h-4" />
+                              </Button>
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

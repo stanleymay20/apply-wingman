@@ -25,9 +25,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { cvTextSchema, skillSchema, roleSchema, locationSchema } from "@/lib/validation";
+import { ResumeScoreCard } from "@/components/profile/ResumeScoreCard";
+import { CVProfileSelector } from "@/components/profile/CVProfileSelector";
+import { useQuery } from "@tanstack/react-query";
 
 export default function Profile() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, user } = useAuth();
   const { cvProfile, isLoading, parseCV, isParsing, createCVProfile, refetch } = useCVProfile();
   const { uploadFile, isUploading, uploadProgress } = useFileUpload();
   
@@ -38,6 +41,22 @@ export default function Profile() {
   const [cvText, setCvText] = useState("");
   const [showReparse, setShowReparse] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Fetch all CV profiles for selector
+  const { data: allProfiles = [], refetch: refetchProfiles } = useQuery({
+    queryKey: ["cv-profiles-list", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("cv_profiles")
+        .select("id, profile_name, is_active, skills, experience_years, last_parsed_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
+  });
 
   const skills = cvProfile?.skills || [];
   const preferredRoles = profile?.preferred_roles || [];
@@ -266,6 +285,21 @@ export default function Profile() {
         </p>
       </div>
 
+      {/* CV Profile Selector */}
+      {allProfiles.length > 0 && (
+        <div className="mb-6 animate-fade-in">
+          <CVProfileSelector
+            profiles={allProfiles}
+            activeProfileId={cvProfile?.id || null}
+            onProfileChange={(id) => refetch()}
+            onRefresh={() => {
+              refetchProfiles();
+              refetch();
+            }}
+          />
+        </div>
+      )}
+
       {/* CV Upload Section */}
       <div className="glass-card p-6 mb-6 animate-scale-in">
         <div className="flex items-center justify-between mb-6">
@@ -433,6 +467,21 @@ export default function Profile() {
               </Badge>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ATS Score Card */}
+      {cvProfile?.last_parsed_at && (
+        <div className="mb-6">
+          <ResumeScoreCard
+            cvProfileId={cvProfile.id}
+            cvText={cvProfile.summary || ""}
+            skills={cvProfile.skills || []}
+            experienceYears={cvProfile.experience_years || undefined}
+            seniorityLevel={cvProfile.seniority_level || undefined}
+            existingScore={(cvProfile as any).resume_score || null}
+            existingSuggestions={(cvProfile as any).ats_suggestions || null}
+          />
         </div>
       )}
 

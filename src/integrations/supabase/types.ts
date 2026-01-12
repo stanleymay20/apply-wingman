@@ -159,6 +159,7 @@ export type Database = {
       }
       cv_profiles: {
         Row: {
+          ats_suggestions: Json | null
           created_at: string | null
           cv_file_name: string | null
           cv_file_url: string | null
@@ -170,6 +171,8 @@ export type Database = {
           languages: string[] | null
           last_parsed_at: string | null
           parsed_data: Json | null
+          profile_name: string | null
+          resume_score: number | null
           seniority_level: string | null
           skills: string[] | null
           summary: string | null
@@ -178,6 +181,7 @@ export type Database = {
           work_history: Json | null
         }
         Insert: {
+          ats_suggestions?: Json | null
           created_at?: string | null
           cv_file_name?: string | null
           cv_file_url?: string | null
@@ -189,6 +193,8 @@ export type Database = {
           languages?: string[] | null
           last_parsed_at?: string | null
           parsed_data?: Json | null
+          profile_name?: string | null
+          resume_score?: number | null
           seniority_level?: string | null
           skills?: string[] | null
           summary?: string | null
@@ -197,6 +203,7 @@ export type Database = {
           work_history?: Json | null
         }
         Update: {
+          ats_suggestions?: Json | null
           created_at?: string | null
           cv_file_name?: string | null
           cv_file_url?: string | null
@@ -208,6 +215,8 @@ export type Database = {
           languages?: string[] | null
           last_parsed_at?: string | null
           parsed_data?: Json | null
+          profile_name?: string | null
+          resume_score?: number | null
           seniority_level?: string | null
           skills?: string[] | null
           summary?: string | null
@@ -514,6 +523,82 @@ export type Database = {
           visa_required?: boolean | null
         }
         Relationships: []
+      }
+      referral_emails: {
+        Row: {
+          application_id: string | null
+          body: string
+          company: string
+          created_at: string
+          id: string
+          job_id: string | null
+          opened_at: string | null
+          recipient_email: string
+          recipient_name: string
+          recipient_title: string | null
+          sent_at: string | null
+          status: string
+          subject: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          application_id?: string | null
+          body: string
+          company: string
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          opened_at?: string | null
+          recipient_email: string
+          recipient_name: string
+          recipient_title?: string | null
+          sent_at?: string | null
+          status?: string
+          subject: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          application_id?: string | null
+          body?: string
+          company?: string
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          opened_at?: string | null
+          recipient_email?: string
+          recipient_name?: string
+          recipient_title?: string | null
+          sent_at?: string | null
+          status?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_emails_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_emails_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_emails_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       saved_searches: {
         Row: {
