@@ -71,40 +71,90 @@ serve(async (req) => {
       });
     }
 
-    const systemPrompt = `You are an expert CV/Resume parser. Extract structured information from the provided CV and return a JSON object with the following structure:
+    const systemPrompt = `You are an expert CV/Resume parser. Your job is to thoroughly extract ALL structured information from the ENTIRE CV document, not just the beginning or summary.
+
+CRITICAL INSTRUCTIONS:
+1. Parse the COMPLETE document from start to finish
+2. Extract EVERY job position listed, not just the first few
+3. Extract ALL skills mentioned anywhere in the document
+4. Extract ALL education entries
+5. Extract ALL certifications mentioned
+6. Include bullet points and achievements for each work experience
+
+Return a JSON object with the following structure:
 
 {
   "full_name": "string",
   "email": "string or null",
-  "phone": "string or null",
+  "phone": "string or null", 
   "location": "string or null",
-  "summary": "A 2-3 sentence professional summary",
-  "skills": ["array", "of", "skills"],
-  "experience_years": number,
+  "linkedin_url": "string or null",
+  "portfolio_url": "string or null",
+  "summary": "A 2-4 sentence professional summary synthesizing key strengths",
+  "skills": {
+    "technical": ["programming languages", "frameworks", "tools"],
+    "soft": ["leadership", "communication", etc.],
+    "tools": ["specific software", "platforms"],
+    "all": ["flat array of all skills for matching"]
+  },
+  "experience_years": number (calculate from work history),
   "seniority_level": "junior|mid|senior|lead|principal|executive",
-  "languages": ["German", "English", etc.],
-  "keywords": ["relevant", "job", "keywords"],
+  "languages": [{"language": "English", "level": "native|fluent|intermediate|basic"}],
+  "certifications": [
+    {
+      "name": "string",
+      "issuer": "string or null",
+      "year": number or null
+    }
+  ],
+  "keywords": ["ATS-relevant", "keywords", "extracted", "from", "entire", "document"],
   "education": [
     {
-      "degree": "string",
-      "field": "string",
+      "degree": "string (e.g., Bachelor of Science)",
+      "field": "string (e.g., Computer Science)",
       "institution": "string",
-      "year": number or null
+      "year": number or null,
+      "gpa": "string or null",
+      "honors": "string or null"
     }
   ],
   "work_history": [
     {
-      "title": "string",
-      "company": "string",
-      "duration": "string",
+      "title": "string - exact job title",
+      "company": "string - company name",
+      "location": "string or null",
+      "duration": "string (e.g., Jan 2020 - Present)",
+      "start_date": "string (YYYY-MM or YYYY)",
+      "end_date": "string (YYYY-MM or YYYY or 'Present')",
       "start_year": number or null,
-      "end_year": number or null,
-      "highlights": ["array", "of", "achievements"]
+      "end_year": number or null (null if current),
+      "is_current": boolean,
+      "employment_type": "full-time|part-time|contract|freelance|internship",
+      "highlights": ["achievement 1 with metrics if available", "achievement 2", "responsibility 3"],
+      "technologies": ["tech used in this role"]
     }
-  ]
+  ],
+  "projects": [
+    {
+      "name": "string",
+      "description": "string",
+      "technologies": ["array"],
+      "url": "string or null"
+    }
+  ],
+  "publications": ["string or null"],
+  "awards": ["string or null"],
+  "volunteer": ["string or null"]
 }
 
-Be thorough and extract all relevant information. Focus on technical skills, certifications, and quantifiable achievements. Return ONLY the JSON object, no markdown code blocks.`;
+IMPORTANT:
+- Extract ALL work history entries, even if there are 10+ jobs
+- Include quantifiable achievements (%, $, numbers) in highlights
+- Identify technologies/tools mentioned in each job's context
+- Calculate experience_years by summing work history durations
+- Be thorough - this data is used for job matching
+
+Return ONLY valid JSON, no markdown code blocks.`;
 
     // Build messages based on whether we have text or PDF
     let messages: any[];
@@ -193,14 +243,42 @@ Be thorough and extract all relevant information. Focus on technical skills, cer
     // Update the CV profile in the database if cvProfileId is provided
     if (cvProfileId) {
       console.log("Updating CV profile:", cvProfileId);
+      
+      // Flatten skills if they're in the new structured format
+      let flatSkills: string[] = [];
+      if (parsedCV.skills) {
+        if (Array.isArray(parsedCV.skills)) {
+          flatSkills = parsedCV.skills;
+        } else if (parsedCV.skills.all) {
+          flatSkills = parsedCV.skills.all;
+        } else {
+          // Combine all skill categories
+          flatSkills = [
+            ...(parsedCV.skills.technical || []),
+            ...(parsedCV.skills.soft || []),
+            ...(parsedCV.skills.tools || []),
+          ];
+        }
+      }
+      
+      // Flatten languages if they're in the new structured format
+      let flatLanguages: string[] = [];
+      if (parsedCV.languages) {
+        if (Array.isArray(parsedCV.languages)) {
+          flatLanguages = parsedCV.languages.map((lang: any) => 
+            typeof lang === 'string' ? lang : `${lang.language} (${lang.level})`
+          );
+        }
+      }
+      
       const { error: updateError } = await supabase
         .from("cv_profiles")
         .update({
           parsed_data: parsedCV,
-          skills: parsedCV.skills || [],
+          skills: flatSkills,
           experience_years: parsedCV.experience_years || 0,
           seniority_level: parsedCV.seniority_level || null,
-          languages: parsedCV.languages || [],
+          languages: flatLanguages,
           education: parsedCV.education || [],
           work_history: parsedCV.work_history || [],
           summary: parsedCV.summary || null,

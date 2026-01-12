@@ -27,6 +27,7 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { cvTextSchema, skillSchema, roleSchema, locationSchema } from "@/lib/validation";
 import { ResumeScoreCard } from "@/components/profile/ResumeScoreCard";
 import { CVProfileSelector } from "@/components/profile/CVProfileSelector";
+import { CVWorkHistoryDisplay } from "@/components/profile/CVWorkHistoryDisplay";
 import { useQuery } from "@tanstack/react-query";
 
 export default function Profile() {

@@ -36,6 +36,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { profileSettingsSchema, domainSchema, nameSchema } from "@/lib/validation";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
+import { ThemeModeSelector } from "@/components/settings/ThemeModeSelector";
 
 export default function Settings() {
   const { profile, refreshProfile, signOut, loading } = useAuth();
@@ -610,15 +611,20 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Theme Settings */}
-      <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "200ms" }}>
+      {/* Theme Mode Settings */}
+      <div className="mb-6 animate-scale-in" style={{ animationDelay: "200ms" }}>
+        <ThemeModeSelector />
+      </div>
+
+      {/* Color Theme Settings */}
+      <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "225ms" }}>
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 rounded-lg bg-primary/20">
             <Palette className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Appearance</h2>
-            <p className="text-sm text-muted-foreground">Customize your dashboard theme</p>
+            <h2 className="text-lg font-semibold text-foreground">Color Theme</h2>
+            <p className="text-sm text-muted-foreground">Customize your accent colors</p>
           </div>
         </div>
 
