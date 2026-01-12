@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { useState } from "react";
 
 interface DiscoveryParams {
   keywords: string[];
@@ -21,9 +22,19 @@ interface DiscoveredJob {
   job_type: string;
 }
 
+export interface DiscoveryRunStatus {
+  timestamp: string;
+  params: DiscoveryParams;
+  jobsReturned: number;
+  jobsSaved: number;
+  error: string | null;
+  status: "success" | "partial" | "error";
+}
+
 export function useJobDiscovery() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [lastRun, setLastRun] = useState<DiscoveryRunStatus | null>(null);
 
   const discoverJobsMutation = useMutation({
     mutationFn: async (params: DiscoveryParams): Promise<DiscoveredJob[]> => {
@@ -52,21 +63,59 @@ export function useJobDiscovery() {
         throw err;
       }
     },
-    onSuccess: async (jobs) => {
+    onSuccess: async (jobs, params) => {
       console.log("Discovery success, jobs:", jobs?.length);
       
       if (!user) {
+        setLastRun({
+          timestamp: new Date().toISOString(),
+          params,
+          jobsReturned: jobs?.length || 0,
+          jobsSaved: 0,
+          error: "Not authenticated",
+          status: "error",
+        });
         toast.error("Not authenticated");
         return;
       }
       
       if (!jobs || jobs.length === 0) {
+        setLastRun({
+          timestamp: new Date().toISOString(),
+          params,
+          jobsReturned: 0,
+          jobsSaved: 0,
+          error: null,
+          status: "success",
+        });
         toast.info("No new matching jobs found");
         return;
       }
 
+      // Filter out jobs that already exist (by source_url)
+      const existingUrls = await supabase
+        .from("jobs")
+        .select("source_url")
+        .eq("user_id", user.id);
+      
+      const existingUrlSet = new Set(existingUrls.data?.map((j) => j.source_url) || []);
+      const newJobs = jobs.filter((job) => !existingUrlSet.has(job.source_url));
+
+      if (newJobs.length === 0) {
+        setLastRun({
+          timestamp: new Date().toISOString(),
+          params,
+          jobsReturned: jobs.length,
+          jobsSaved: 0,
+          error: "All jobs already exist in your list",
+          status: "partial",
+        });
+        toast.info("All discovered jobs already exist in your list");
+        return;
+      }
+
       // Insert discovered jobs into database
-      const jobsToInsert = jobs.map((job) => ({
+      const jobsToInsert = newJobs.map((job) => ({
         title: job.title,
         company: job.company,
         location: job.location || null,
@@ -81,28 +130,54 @@ export function useJobDiscovery() {
       }));
 
       console.log("Inserting jobs:", jobsToInsert.length);
-      const { error } = await supabase.from("jobs").insert(jobsToInsert);
+      const { data: insertedData, error } = await supabase.from("jobs").insert(jobsToInsert).select();
 
       if (error) {
         console.error("Failed to save discovered jobs:", error);
-        toast.error("Failed to save some discovered jobs");
+        setLastRun({
+          timestamp: new Date().toISOString(),
+          params,
+          jobsReturned: jobs.length,
+          jobsSaved: 0,
+          error: `Database error: ${error.code} - ${error.message}`,
+          status: "error",
+        });
+        toast.error(`Failed to save jobs: ${error.message}`);
       } else {
+        const savedCount = insertedData?.length || newJobs.length;
+        setLastRun({
+          timestamp: new Date().toISOString(),
+          params,
+          jobsReturned: jobs.length,
+          jobsSaved: savedCount,
+          error: null,
+          status: "success",
+        });
+        
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
         queryClient.invalidateQueries({ queryKey: ["applications"] });
-        toast.success(`Found ${jobs.length} new jobs!`);
+        toast.success(`Found ${savedCount} new real jobs!`);
 
         // Create notification
         await supabase.from("notifications").insert({
           user_id: user.id,
           type: "jobs_discovered",
-          title: "New Jobs Found",
-          message: `Discovered ${jobs.length} matching jobs from your preferred platforms`,
-          data: { count: jobs.length },
+          title: "Real Jobs Found",
+          message: `Discovered ${savedCount} real job listings from ${params.platforms.join(", ")}`,
+          data: { count: savedCount, platforms: params.platforms },
         });
       }
     },
-    onError: (error) => {
+    onError: (error, params) => {
       console.error("Discovery error:", error);
+      setLastRun({
+        timestamp: new Date().toISOString(),
+        params,
+        jobsReturned: 0,
+        jobsSaved: 0,
+        error: error.message,
+        status: "error",
+      });
       toast.error(`Discovery failed: ${error.message}`);
     },
   });
@@ -111,5 +186,7 @@ export function useJobDiscovery() {
     discoverJobs: discoverJobsMutation.mutate,
     isDiscovering: discoverJobsMutation.isPending,
     discoveredJobs: discoverJobsMutation.data,
+    lastRun,
+    clearLastRun: () => setLastRun(null),
   };
 }

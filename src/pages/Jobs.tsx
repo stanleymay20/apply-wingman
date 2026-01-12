@@ -33,12 +33,14 @@ import {
 } from "lucide-react";
 import { useJobs } from "@/hooks/useJobs";
 import { useCVProfile } from "@/hooks/useCVProfile";
+import { useJobDiscovery } from "@/hooks/useJobDiscovery";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
 import { JobDetailsDrawer } from "@/components/jobs/JobDetailsDrawer";
 import { SavedSearchesPanel } from "@/components/jobs/SavedSearchesPanel";
 import { BulkApplyDialog } from "@/components/jobs/BulkApplyDialog";
+import { DiscoveryStatusPanel } from "@/components/jobs/DiscoveryStatusPanel";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +68,7 @@ const PLATFORM_OPTIONS = [
 export default function Jobs() {
   const { jobs, isLoading, matchJob, isMatching, refetch } = useJobs();
   const { cvProfile } = useCVProfile();
+  const { lastRun, clearLastRun } = useJobDiscovery();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
@@ -421,6 +424,7 @@ export default function Jobs() {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          <DiscoveryStatusPanel lastRun={lastRun} onDismiss={clearLastRun} />
           <SavedSearchesPanel onSearchRun={refetch} />
         </div>
       </div>
