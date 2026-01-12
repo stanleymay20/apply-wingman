@@ -449,12 +449,14 @@ export type Database = {
       profiles: {
         Row: {
           automation_status: string | null
+          bulk_apply_mode: string | null
           created_at: string | null
           daily_application_cap: number | null
           email: string
           email_notifications: boolean | null
           full_name: string | null
           id: string
+          job_details_view: string | null
           location: string | null
           manual_approval_mode: boolean | null
           minimum_fit_score: number | null
@@ -462,18 +464,21 @@ export type Database = {
           phone: string | null
           preferred_locations: string[] | null
           preferred_roles: string[] | null
+          saved_search_frequency: string | null
           theme_preference: string | null
           updated_at: string | null
           visa_required: boolean | null
         }
         Insert: {
           automation_status?: string | null
+          bulk_apply_mode?: string | null
           created_at?: string | null
           daily_application_cap?: number | null
           email: string
           email_notifications?: boolean | null
           full_name?: string | null
           id: string
+          job_details_view?: string | null
           location?: string | null
           manual_approval_mode?: boolean | null
           minimum_fit_score?: number | null
@@ -481,18 +486,21 @@ export type Database = {
           phone?: string | null
           preferred_locations?: string[] | null
           preferred_roles?: string[] | null
+          saved_search_frequency?: string | null
           theme_preference?: string | null
           updated_at?: string | null
           visa_required?: boolean | null
         }
         Update: {
           automation_status?: string | null
+          bulk_apply_mode?: string | null
           created_at?: string | null
           daily_application_cap?: number | null
           email?: string
           email_notifications?: boolean | null
           full_name?: string | null
           id?: string
+          job_details_view?: string | null
           location?: string | null
           manual_approval_mode?: boolean | null
           minimum_fit_score?: number | null
@@ -500,9 +508,49 @@ export type Database = {
           phone?: string | null
           preferred_locations?: string[] | null
           preferred_roles?: string[] | null
+          saved_search_frequency?: string | null
           theme_preference?: string | null
           updated_at?: string | null
           visa_required?: boolean | null
+        }
+        Relationships: []
+      }
+      saved_searches: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          keywords: string[]
+          last_run_at: string | null
+          locations: string[]
+          name: string
+          platforms: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keywords?: string[]
+          last_run_at?: string | null
+          locations?: string[]
+          name: string
+          platforms?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keywords?: string[]
+          last_run_at?: string | null
+          locations?: string[]
+          name?: string
+          platforms?: string[]
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

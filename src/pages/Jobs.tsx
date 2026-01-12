@@ -29,12 +29,16 @@ import {
   Briefcase,
   Target,
   Loader2,
+  Rocket,
 } from "lucide-react";
 import { useJobs } from "@/hooks/useJobs";
 import { useCVProfile } from "@/hooks/useCVProfile";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
+import { JobDetailsDrawer } from "@/components/jobs/JobDetailsDrawer";
+import { SavedSearchesPanel } from "@/components/jobs/SavedSearchesPanel";
+import { BulkApplyDialog } from "@/components/jobs/BulkApplyDialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +70,9 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
   const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
+  const [selectedJob, setSelectedJob] = useState<typeof jobs[0] | null>(null);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
@@ -83,6 +89,10 @@ export default function Jobs() {
       return matchesSearch && matchesStatus && matchesPlatform;
     });
   }, [jobs, searchQuery, statusFilter, platformFilter]);
+
+  const matchedJobs = useMemo(() => {
+    return jobs.filter((j) => j.match_score);
+  }, [jobs]);
 
   const handleMatchJob = (jobId: string) => {
     if (!cvProfile) {
@@ -108,7 +118,7 @@ export default function Jobs() {
       toast.info("All jobs are already matched");
       return;
     }
-    toast.info(`Matching ${unmatchedJobs.length} jobs...`);
+    toast.info(`Matching ${Math.min(unmatchedJobs.length, 5)} jobs...`);
     unmatchedJobs.slice(0, 5).forEach((job) => {
       matchJob({ jobId: job.id, cvProfileId: cvProfile.id });
     });
@@ -170,233 +180,266 @@ export default function Jobs() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-info/10">
-                <Briefcase className="w-5 h-5 text-info" />
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-info/10">
+                    <Briefcase className="w-5 h-5 text-info" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{jobs.length}</p>
+                    <p className="text-sm text-muted-foreground">Total Jobs</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-primary/10">
+                    <Target className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{matchedJobs.length}</p>
+                    <p className="text-sm text-muted-foreground">Matched</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-success/10">
+                    <Sparkles className="w-5 h-5 text-success" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {jobs.filter((j) => (j.match_score || 0) >= 70).length}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Good Fit (70%+)</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-warning/10">
+                    <Filter className="w-5 h-5 text-warning" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {jobs.filter((j) => !j.match_score).length}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Unmatched</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by title, company, or location..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 bg-secondary"
+                  />
+                </div>
+                <Select
+                  value={statusFilter}
+                  onValueChange={(v) => setStatusFilter(v as JobStatus | "all")}
+                >
+                  <SelectTrigger className="w-full sm:w-40">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={platformFilter} onValueChange={setPlatformFilter}>
+                  <SelectTrigger className="w-full sm:w-40">
+                    <SelectValue placeholder="Platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLATFORM_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={handleMatchAll}
+                  disabled={isMatching || !cvProfile}
+                >
+                  <Target className="w-4 h-4 mr-2" />
+                  Match All
+                </Button>
+                <Button
+                  onClick={() => setBulkApplyOpen(true)}
+                  disabled={matchedJobs.length === 0}
+                >
+                  <Rocket className="w-4 h-4 mr-2" />
+                  Bulk Apply
+                </Button>
               </div>
-              <div>
-                <p className="text-2xl font-bold">{jobs.length}</p>
-                <p className="text-sm text-muted-foreground">Total Jobs</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <Target className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {jobs.filter((j) => j.match_score).length}
-                </p>
-                <p className="text-sm text-muted-foreground">Matched</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-success/10">
-                <Sparkles className="w-5 h-5 text-success" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {jobs.filter((j) => (j.match_score || 0) >= 70).length}
-                </p>
-                <p className="text-sm text-muted-foreground">Good Fit (70%+)</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-warning/10">
-                <Filter className="w-5 h-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {jobs.filter((j) => !j.match_score).length}
-                </p>
-                <p className="text-sm text-muted-foreground">Unmatched</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Jobs Table */}
+          {filteredJobs.length === 0 ? (
+            <EmptyState
+              icon={Briefcase}
+              title="No jobs found"
+              description={
+                jobs.length === 0
+                  ? "Start discovering jobs by clicking the 'Discover Jobs' button above."
+                  : "Try adjusting your filters to find more jobs."
+              }
+              action={
+                jobs.length === 0
+                  ? {
+                      label: "Discover Jobs",
+                      onClick: () => setDiscoveryOpen(true),
+                    }
+                  : undefined
+              }
+            />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {filteredJobs.length} Job{filteredJobs.length !== 1 && "s"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Job Title</TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead className="hidden md:table-cell">Location</TableHead>
+                        <TableHead className="hidden sm:table-cell">Platform</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Match</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredJobs.map((job) => (
+                        <TableRow
+                          key={job.id}
+                          className="cursor-pointer hover:bg-secondary/50"
+                          onClick={() => setSelectedJob(job)}
+                        >
+                          <TableCell>
+                            <div className="font-medium">{job.title}</div>
+                            {job.job_type && (
+                              <span className="text-xs text-muted-foreground capitalize">
+                                {job.job_type}
+                                {job.is_remote && " • Remote"}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Building2 className="w-4 h-4 text-muted-foreground" />
+                              {job.company}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                              {job.location || "Not specified"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            <Badge variant="outline" className="capitalize">
+                              {job.source_platform}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{getStatusBadge(job.status || "discovered")}</TableCell>
+                          <TableCell>
+                            {job.match_score ? (
+                              getMatchScoreBadge(job.match_score)
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMatchJob(job.id);
+                                }}
+                                disabled={isMatching || !cvProfile}
+                              >
+                                {matchingJobId === job.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Target className="w-4 h-4" />
+                                )}
+                              </Button>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(job.source_url, "_blank");
+                              }}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          <SavedSearchesPanel onSearchRun={refetch} />
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by title, company, or location..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-secondary"
-              />
-            </div>
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v as JobStatus | "all")}
-            >
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={platformFilter} onValueChange={setPlatformFilter}>
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Platform" />
-              </SelectTrigger>
-              <SelectContent>
-                {PLATFORM_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              onClick={handleMatchAll}
-              disabled={isMatching || !cvProfile}
-            >
-              <Target className="w-4 h-4 mr-2" />
-              Match All
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Jobs Table */}
-      {filteredJobs.length === 0 ? (
-        <EmptyState
-          icon={Briefcase}
-          title="No jobs found"
-          description={
-            jobs.length === 0
-              ? "Start discovering jobs by clicking the 'Discover Jobs' button above."
-              : "Try adjusting your filters to find more jobs."
-          }
-          action={
-            jobs.length === 0
-              ? {
-                  label: "Discover Jobs",
-                  onClick: () => setDiscoveryOpen(true),
-                }
-              : undefined
-          }
-        />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {filteredJobs.length} Job{filteredJobs.length !== 1 && "s"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Job Title</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Platform</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Match</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredJobs.map((job) => (
-                    <TableRow key={job.id}>
-                      <TableCell>
-                        <div className="font-medium">{job.title}</div>
-                        {job.job_type && (
-                          <span className="text-xs text-muted-foreground capitalize">
-                            {job.job_type}
-                            {job.is_remote && " • Remote"}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-muted-foreground" />
-                          {job.company}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-muted-foreground" />
-                          {job.location || "Not specified"}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {job.source_platform}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(job.status || "discovered")}</TableCell>
-                      <TableCell>
-                        {job.match_score ? (
-                          getMatchScoreBadge(job.match_score)
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleMatchJob(job.id)}
-                            disabled={isMatching || !cvProfile}
-                          >
-                            {matchingJobId === job.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Target className="w-4 h-4" />
-                            )}
-                          </Button>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          asChild
-                        >
-                          <a
-                            href={job.source_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       <JobDiscoveryDialog open={discoveryOpen} onOpenChange={setDiscoveryOpen} />
+      <JobDetailsDrawer
+        job={selectedJob}
+        open={!!selectedJob}
+        onOpenChange={(open) => !open && setSelectedJob(null)}
+        onMatch={handleMatchJob}
+        isMatching={isMatching}
+        hasCV={!!cvProfile}
+      />
+      <BulkApplyDialog
+        open={bulkApplyOpen}
+        onOpenChange={setBulkApplyOpen}
+        jobs={matchedJobs}
+        onComplete={refetch}
+      />
     </div>
   );
 }
