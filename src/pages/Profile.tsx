@@ -24,7 +24,7 @@ import { useCVProfile } from "@/hooks/useCVProfile";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
-import { cvTextSchema, skillSchema, roleSchema, locationSchema, safeValidate } from "@/lib/validation";
+import { cvTextSchema, skillSchema, roleSchema, locationSchema } from "@/lib/validation";
 
 export default function Profile() {
   const { profile, refreshProfile } = useAuth();

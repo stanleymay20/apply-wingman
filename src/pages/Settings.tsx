@@ -22,7 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
-import { profileSettingsSchema, domainSchema, nameSchema, safeValidate } from "@/lib/validation";
+import { profileSettingsSchema, domainSchema, nameSchema } from "@/lib/validation";
 
 export default function Settings() {
   const { profile, refreshProfile, signOut, loading } = useAuth();

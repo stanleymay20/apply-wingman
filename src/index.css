@@ -6,26 +6,29 @@
 
 @layer base {
   :root {
-    --background: 222 47% 6%;
+    /* Navy Blue base - from logo */
+    --background: 214 35% 8%;
     --foreground: 210 40% 98%;
 
-    --card: 222 47% 9%;
+    --card: 214 35% 11%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222 47% 11%;
+    --popover: 214 35% 13%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 173 80% 40%;
-    --primary-foreground: 222 47% 6%;
+    /* Orange primary - from logo */
+    --primary: 28 95% 53%;
+    --primary-foreground: 214 35% 8%;
 
-    --secondary: 222 30% 18%;
+    --secondary: 214 30% 18%;
     --secondary-foreground: 210 40% 90%;
 
-    --muted: 222 30% 14%;
+    --muted: 214 30% 14%;
     --muted-foreground: 215 20% 55%;
 
-    --accent: 173 80% 40%;
-    --accent-foreground: 222 47% 6%;
+    /* Sky blue accent - from robot */
+    --accent: 200 80% 65%;
+    --accent-foreground: 214 35% 8%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
@@ -34,40 +37,42 @@
     --success-foreground: 210 40% 98%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 6%;
+    --warning-foreground: 214 35% 8%;
 
-    --info: 199 89% 48%;
+    --info: 200 85% 55%;
     --info-foreground: 210 40% 98%;
 
-    --border: 222 30% 18%;
-    --input: 222 30% 14%;
-    --ring: 173 80% 40%;
+    --border: 214 30% 18%;
+    --input: 214 30% 14%;
+    --ring: 28 95% 53%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 222 47% 8%;
+    /* Sidebar with navy theme */
+    --sidebar-background: 214 35% 10%;
     --sidebar-foreground: 210 40% 85%;
-    --sidebar-primary: 173 80% 40%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 222 30% 14%;
+    --sidebar-primary: 28 95% 53%;
+    --sidebar-primary-foreground: 214 35% 8%;
+    --sidebar-accent: 214 30% 16%;
     --sidebar-accent-foreground: 210 40% 90%;
-    --sidebar-border: 222 30% 15%;
-    --sidebar-ring: 173 80% 40%;
+    --sidebar-border: 214 30% 15%;
+    --sidebar-ring: 28 95% 53%;
 
-    /* Custom gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(173 80% 40%) 0%, hsl(199 89% 48%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(222 47% 11%) 0%, hsl(222 47% 8%) 100%);
-    --gradient-glow: radial-gradient(ellipse at center, hsl(173 80% 40% / 0.15) 0%, transparent 70%);
+    /* Custom gradients with orange/navy */
+    --gradient-primary: linear-gradient(135deg, hsl(28 95% 53%) 0%, hsl(38 92% 50%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(200 80% 65%) 0%, hsl(214 35% 40%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(214 35% 13%) 0%, hsl(214 35% 9%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(28 95% 53% / 0.15) 0%, transparent 70%);
     
     /* Shadows */
-    --shadow-sm: 0 1px 2px 0 hsl(222 47% 4% / 0.5);
-    --shadow-md: 0 4px 6px -1px hsl(222 47% 4% / 0.4), 0 2px 4px -1px hsl(222 47% 4% / 0.2);
-    --shadow-lg: 0 10px 15px -3px hsl(222 47% 4% / 0.5), 0 4px 6px -2px hsl(222 47% 4% / 0.3);
-    --shadow-glow: 0 0 40px -10px hsl(173 80% 40% / 0.4);
+    --shadow-sm: 0 1px 2px 0 hsl(214 35% 4% / 0.5);
+    --shadow-md: 0 4px 6px -1px hsl(214 35% 4% / 0.4), 0 2px 4px -1px hsl(214 35% 4% / 0.2);
+    --shadow-lg: 0 10px 15px -3px hsl(214 35% 4% / 0.5), 0 4px 6px -2px hsl(214 35% 4% / 0.3);
+    --shadow-glow: 0 0 40px -10px hsl(28 95% 53% / 0.4);
   }
 
   .dark {
-    --background: 222 47% 6%;
+    --background: 214 35% 8%;
     --foreground: 210 40% 98%;
   }
 }
@@ -166,6 +171,15 @@
     content: '';
     @apply relative inline-flex h-3 w-3 rounded-full bg-primary;
   }
+
+  /* Logo text styling */
+  .logo-text-navy {
+    @apply text-foreground font-bold;
+  }
+
+  .logo-text-orange {
+    @apply text-primary font-bold;
+  }
 }
 
 @layer utilities {
@@ -191,10 +205,10 @@
 
   @keyframes pulse-glow {
     0%, 100% {
-      box-shadow: 0 0 20px -5px hsl(173 80% 40% / 0.4);
+      box-shadow: 0 0 20px -5px hsl(28 95% 53% / 0.4);
     }
     50% {
-      box-shadow: 0 0 30px -5px hsl(173 80% 40% / 0.6);
+      box-shadow: 0 0 30px -5px hsl(28 95% 53% / 0.6);
     }
   }
 
