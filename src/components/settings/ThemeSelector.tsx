@@ -1,13 +1,14 @@
+import { forwardRef } from "react";
 import { useTheme, ThemeOption, themeOptions } from "@/hooks/useTheme";
 import { Label } from "@/components/ui/label";
 import { CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function ThemeSelector() {
+export const ThemeSelector = forwardRef<HTMLDivElement, object>((_props, ref) => {
   const { currentTheme, setTheme } = useTheme();
 
   return (
-    <div className="space-y-4">
+    <div ref={ref} className="space-y-4">
       <Label className="text-foreground">Theme</Label>
       <p className="text-sm text-muted-foreground mb-4">
         Choose your preferred color scheme
@@ -63,4 +64,6 @@ export function ThemeSelector() {
       </div>
     </div>
   );
-}
+});
+
+ThemeSelector.displayName = "ThemeSelector";
