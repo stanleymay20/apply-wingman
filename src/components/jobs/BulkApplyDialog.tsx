@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -56,9 +56,16 @@ export function BulkApplyDialog({
   const defaultThreshold = profile?.minimum_fit_score || 70;
   const savedMode = (profile as any)?.bulk_apply_mode as BulkApplyMode | undefined;
 
-  const [threshold, setThreshold] = useState(defaultThreshold);
-  const [mode, setMode] = useState<BulkApplyMode>(savedMode || "queue_links");
+  const [threshold, setThreshold] = useState(70);
+  const [mode, setMode] = useState<BulkApplyMode>("queue_links");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Sync dialog defaults whenever it opens (profile can load after first render)
+  useEffect(() => {
+    if (!open) return;
+    setThreshold(defaultThreshold);
+    setMode(savedMode || "queue_links");
+  }, [open, defaultThreshold, savedMode]);
 
   const eligibleJobs = useMemo(() => {
     return jobs.filter((job) => (job.match_score || 0) >= threshold);
