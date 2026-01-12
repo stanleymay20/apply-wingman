@@ -49,14 +49,22 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   useEffect(() => {
     if (!open) return;
 
-    if (keywords.length === 0 && (profile?.preferred_roles?.length ?? 0) > 0) {
-      setKeywords(profile!.preferred_roles);
-    }
+    const preferredRoles = (profile?.preferred_roles || []).filter(Boolean);
+    const preferredLocations = (profile?.preferred_locations || []).filter(Boolean);
 
-    if (locations.length === 0 && (profile?.preferred_locations?.length ?? 0) > 0) {
-      setLocations(profile!.preferred_locations);
-    }
-  }, [open, profile, keywords.length, locations.length]);
+    setKeywords((prev) => {
+      if (prev.length > 0) return prev;
+      if (preferredRoles.length > 0) return preferredRoles;
+      // Sensible fallback so the CTA isn't "dead" on first use.
+      return ["Software Engineer"];
+    });
+
+    setLocations((prev) => {
+      if (prev.length > 0) return prev;
+      if (preferredLocations.length > 0) return preferredLocations;
+      return ["Remote"];
+    });
+  }, [open, profile]);
 
   const togglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
