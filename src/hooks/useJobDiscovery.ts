@@ -29,27 +29,52 @@ export function useJobDiscovery() {
     mutationFn: async (params: DiscoveryParams) => {
       if (!user) throw new Error("Not authenticated");
 
+      console.log("Calling discover-jobs with:", params);
       const { data, error } = await supabase.functions.invoke("discover-jobs", {
         body: params,
       });
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-      return data.jobs as DiscoveredJob[];
+      console.log("discover-jobs response:", { data, error });
+      
+      if (error) {
+        console.error("Edge function error:", error);
+        throw error;
+      }
+      if (data?.error) {
+        console.error("Data error:", data.error);
+        throw new Error(data.error);
+      }
+      return data?.jobs as DiscoveredJob[];
     },
     onSuccess: async (jobs) => {
-      if (!user || jobs.length === 0) {
+      console.log("Discovery success, jobs:", jobs?.length);
+      
+      if (!user) {
+        toast.error("Not authenticated");
+        return;
+      }
+      
+      if (!jobs || jobs.length === 0) {
         toast.info("No new matching jobs found");
         return;
       }
 
       // Insert discovered jobs into database
       const jobsToInsert = jobs.map((job) => ({
-        ...job,
+        title: job.title,
+        company: job.company,
+        location: job.location || null,
+        source_platform: job.source_platform,
+        source_url: job.source_url,
+        description: job.description || null,
+        requirements: job.requirements || [],
+        is_remote: job.is_remote ?? false,
+        job_type: job.job_type || null,
         user_id: user.id,
         status: "discovered",
       }));
 
+      console.log("Inserting jobs:", jobsToInsert.length);
       const { error } = await supabase.from("jobs").insert(jobsToInsert);
 
       if (error) {
@@ -57,6 +82,7 @@ export function useJobDiscovery() {
         toast.error("Failed to save some discovered jobs");
       } else {
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
+        queryClient.invalidateQueries({ queryKey: ["applications"] });
         toast.success(`Found ${jobs.length} new jobs!`);
 
         // Create notification
@@ -70,6 +96,7 @@ export function useJobDiscovery() {
       }
     },
     onError: (error) => {
+      console.error("Discovery error:", error);
       toast.error(`Discovery failed: ${error.message}`);
     },
   });

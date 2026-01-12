@@ -70,13 +70,21 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
     setLocations(locations.filter((l) => l !== location));
   };
 
-  const handleDiscover = () => {
+  const handleDiscover = async () => {
     if (keywords.length === 0) return;
-    discoverJobs({
-      keywords,
-      locations,
-      platforms: selectedPlatforms,
-    });
+    
+    discoverJobs(
+      {
+        keywords,
+        locations,
+        platforms: selectedPlatforms,
+      },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+        },
+      }
+    );
   };
 
   return (
