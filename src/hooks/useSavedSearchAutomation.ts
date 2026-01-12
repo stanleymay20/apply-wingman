@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSavedSearches } from "@/hooks/useSavedSearches";
-import { useJobDiscovery } from "@/hooks/useJobDiscovery";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 function frequencyToMs(freq: string | null | undefined) {
@@ -26,7 +27,11 @@ function isDue(lastRunAt: string | null, intervalMs: number) {
 export function useSavedSearchAutomation() {
   const { profile, user } = useAuth();
   const { searches, markRun, isLoading } = useSavedSearches();
-  const { discoverJobsAsync, isDiscovering } = useJobDiscovery();
+  const queryClient = useQueryClient();
+  
+  // All refs declared unconditionally at the top
+  const runningRef = useRef(false);
+  const lastCheckRef = useRef(0);
 
   const intervalMs = useMemo(
     () => frequencyToMs(profile?.saved_search_frequency),
@@ -45,8 +50,65 @@ export function useSavedSearchAutomation() {
     !isLoading &&
     activeSearches.length > 0;
 
-  const runningRef = useRef(false);
-  const lastCheckRef = useRef(0);
+  // Inline discovery function to avoid hook ordering issues
+  const runDiscovery = useCallback(
+    async (params: { keywords: string[]; locations: string[]; platforms: string[] }) => {
+      if (!user) throw new Error("Not authenticated");
+
+      const { data, error } = await supabase.functions.invoke("discover-jobs", {
+        body: params,
+      });
+
+      if (error) throw new Error(error.message || "Failed to discover jobs");
+      if (data?.error) throw new Error(data.error);
+
+      const jobs = data?.jobs || [];
+      if (jobs.length === 0) return 0;
+
+      // Filter duplicates
+      const existingUrls = await supabase
+        .from("jobs")
+        .select("source_url")
+        .eq("user_id", user.id);
+
+      const existingUrlSet = new Set(existingUrls.data?.map((j) => j.source_url) || []);
+      const newJobs = jobs.filter((job: { source_url: string }) => !existingUrlSet.has(job.source_url));
+
+      if (newJobs.length === 0) return 0;
+
+      // Insert jobs
+      const jobsToInsert = newJobs.map((job: {
+        title: string;
+        company: string;
+        location?: string;
+        source_platform: string;
+        source_url: string;
+        description?: string;
+        requirements?: string[];
+        is_remote?: boolean;
+        job_type?: string;
+      }) => ({
+        title: job.title,
+        company: job.company,
+        location: job.location || null,
+        source_platform: job.source_platform,
+        source_url: job.source_url,
+        description: job.description || null,
+        requirements: job.requirements || [],
+        is_remote: job.is_remote ?? false,
+        job_type: job.job_type || null,
+        user_id: user.id,
+        status: "discovered",
+      }));
+
+      const { error: insertError } = await supabase.from("jobs").insert(jobsToInsert);
+      if (insertError) throw insertError;
+
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      return newJobs.length;
+    },
+    [user, queryClient]
+  );
 
   useEffect(() => {
     if (!enabled || !intervalMs) return;
@@ -55,8 +117,8 @@ export function useSavedSearchAutomation() {
 
     const run = async () => {
       // Prevent concurrent runs
-      if (runningRef.current || isDiscovering) return;
-      
+      if (runningRef.current) return;
+
       // Throttle checks to every 30 seconds minimum
       const now = Date.now();
       if (now - lastCheckRef.current < 30000) return;
@@ -73,14 +135,16 @@ export function useSavedSearchAutomation() {
           toast.info(`Running saved search: ${search.name}`);
 
           try {
-            await discoverJobsAsync({
+            const count = await runDiscovery({
               keywords: search.keywords,
               locations: search.locations,
               platforms: search.platforms,
             });
 
-            // Mark run after successful discovery
             markRun(search.id);
+            if (count > 0) {
+              toast.success(`Found ${count} new jobs from "${search.name}"`);
+            }
           } catch (err) {
             console.error(`[Automation] Search "${search.name}" failed:`, err);
           }
@@ -95,7 +159,7 @@ export function useSavedSearchAutomation() {
 
     // Run once on enable (catch up), then check periodically
     run();
-    
+
     // Check every minute if any search is due
     const id = window.setInterval(run, 60 * 1000);
 
@@ -103,5 +167,5 @@ export function useSavedSearchAutomation() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [enabled, intervalMs, activeSearches, discoverJobsAsync, markRun, isDiscovering]);
+  }, [enabled, intervalMs, activeSearches, runDiscovery, markRun]);
 }
