@@ -1,0 +1,402 @@
+import { useState, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Search,
+  MapPin,
+  Building2,
+  ExternalLink,
+  Sparkles,
+  RefreshCw,
+  Filter,
+  Briefcase,
+  Target,
+  Loader2,
+} from "lucide-react";
+import { useJobs } from "@/hooks/useJobs";
+import { useCVProfile } from "@/hooks/useCVProfile";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { EmptyState } from "@/components/common/EmptyState";
+import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired";
+
+const STATUS_OPTIONS: { value: JobStatus | "all"; label: string }[] = [
+  { value: "all", label: "All Statuses" },
+  { value: "discovered", label: "Discovered" },
+  { value: "matched", label: "Matched" },
+  { value: "applied", label: "Applied" },
+  { value: "rejected", label: "Rejected" },
+  { value: "expired", label: "Expired" },
+];
+
+const PLATFORM_OPTIONS = [
+  { value: "all", label: "All Platforms" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "indeed", label: "Indeed" },
+  { value: "greenhouse", label: "Greenhouse" },
+  { value: "lever", label: "Lever" },
+  { value: "workday", label: "Workday" },
+  { value: "smartrecruiters", label: "SmartRecruiters" },
+];
+
+export default function Jobs() {
+  const { jobs, isLoading, matchJob, isMatching, refetch } = useJobs();
+  const { cvProfile } = useCVProfile();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
+
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((job) => {
+      const matchesSearch =
+        searchQuery === "" ||
+        job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        job.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (job.location?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+
+      const matchesStatus = statusFilter === "all" || job.status === statusFilter;
+      const matchesPlatform =
+        platformFilter === "all" || job.source_platform === platformFilter;
+
+      return matchesSearch && matchesStatus && matchesPlatform;
+    });
+  }, [jobs, searchQuery, statusFilter, platformFilter]);
+
+  const handleMatchJob = (jobId: string) => {
+    if (!cvProfile) {
+      toast.error("Please upload your CV first to enable matching");
+      return;
+    }
+    setMatchingJobId(jobId);
+    matchJob(
+      { jobId, cvProfileId: cvProfile.id },
+      {
+        onSettled: () => setMatchingJobId(null),
+      }
+    );
+  };
+
+  const handleMatchAll = () => {
+    if (!cvProfile) {
+      toast.error("Please upload your CV first to enable matching");
+      return;
+    }
+    const unmatchedJobs = jobs.filter((job) => !job.match_score);
+    if (unmatchedJobs.length === 0) {
+      toast.info("All jobs are already matched");
+      return;
+    }
+    toast.info(`Matching ${unmatchedJobs.length} jobs...`);
+    unmatchedJobs.slice(0, 5).forEach((job) => {
+      matchJob({ jobId: job.id, cvProfileId: cvProfile.id });
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      discovered: "bg-info/10 text-info border-info/20",
+      matched: "bg-primary/10 text-primary border-primary/20",
+      applied: "bg-success/10 text-success border-success/20",
+      rejected: "bg-destructive/10 text-destructive border-destructive/20",
+      expired: "bg-muted text-muted-foreground border-border",
+    };
+    return (
+      <Badge variant="outline" className={cn("capitalize", styles[status])}>
+        {status}
+      </Badge>
+    );
+  };
+
+  const getMatchScoreBadge = (score: number | null) => {
+    if (!score) return null;
+    const color =
+      score >= 80
+        ? "bg-success/10 text-success border-success/20"
+        : score >= 60
+        ? "bg-warning/10 text-warning border-warning/20"
+        : "bg-muted text-muted-foreground border-border";
+    return (
+      <Badge variant="outline" className={cn("font-mono", color)}>
+        {score}%
+      </Badge>
+    );
+  };
+
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Jobs</h1>
+          <p className="text-muted-foreground">
+            Browse and manage discovered job opportunities
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetch()}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+          <Button onClick={() => setDiscoveryOpen(true)}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            Discover Jobs
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-info/10">
+                <Briefcase className="w-5 h-5 text-info" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{jobs.length}</p>
+                <p className="text-sm text-muted-foreground">Total Jobs</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-primary/10">
+                <Target className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {jobs.filter((j) => j.match_score).length}
+                </p>
+                <p className="text-sm text-muted-foreground">Matched</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-success/10">
+                <Sparkles className="w-5 h-5 text-success" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {jobs.filter((j) => (j.match_score || 0) >= 70).length}
+                </p>
+                <p className="text-sm text-muted-foreground">Good Fit (70%+)</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-warning/10">
+                <Filter className="w-5 h-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {jobs.filter((j) => !j.match_score).length}
+                </p>
+                <p className="text-sm text-muted-foreground">Unmatched</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by title, company, or location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-secondary"
+              />
+            </div>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => setStatusFilter(v as JobStatus | "all")}
+            >
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={platformFilter} onValueChange={setPlatformFilter}>
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Platform" />
+              </SelectTrigger>
+              <SelectContent>
+                {PLATFORM_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={handleMatchAll}
+              disabled={isMatching || !cvProfile}
+            >
+              <Target className="w-4 h-4 mr-2" />
+              Match All
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Jobs Table */}
+      {filteredJobs.length === 0 ? (
+        <EmptyState
+          icon={Briefcase}
+          title="No jobs found"
+          description={
+            jobs.length === 0
+              ? "Start discovering jobs by clicking the 'Discover Jobs' button above."
+              : "Try adjusting your filters to find more jobs."
+          }
+          action={
+            jobs.length === 0
+              ? {
+                  label: "Discover Jobs",
+                  onClick: () => setDiscoveryOpen(true),
+                }
+              : undefined
+          }
+        />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {filteredJobs.length} Job{filteredJobs.length !== 1 && "s"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Job Title</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Platform</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Match</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredJobs.map((job) => (
+                    <TableRow key={job.id}>
+                      <TableCell>
+                        <div className="font-medium">{job.title}</div>
+                        {job.job_type && (
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {job.job_type}
+                            {job.is_remote && " • Remote"}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-muted-foreground" />
+                          {job.company}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-muted-foreground" />
+                          {job.location || "Not specified"}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize">
+                          {job.source_platform}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(job.status || "discovered")}</TableCell>
+                      <TableCell>
+                        {job.match_score ? (
+                          getMatchScoreBadge(job.match_score)
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleMatchJob(job.id)}
+                            disabled={isMatching || !cvProfile}
+                          >
+                            {matchingJobId === job.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Target className="w-4 h-4" />
+                            )}
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          asChild
+                        >
+                          <a
+                            href={job.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <JobDiscoveryDialog open={discoveryOpen} onOpenChange={setDiscoveryOpen} />
+    </div>
+  );
+}
