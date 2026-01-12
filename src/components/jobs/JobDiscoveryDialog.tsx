@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,20 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   const [locations, setLocations] = useState<string[]>(profile?.preferred_locations || []);
   const [newKeyword, setNewKeyword] = useState("");
   const [newLocation, setNewLocation] = useState("");
+
+  // Keep dialog defaults in sync with profile once it loads.
+  // (useState initializers only run on first render, so profile-loaded values won't show otherwise)
+  useEffect(() => {
+    if (!open) return;
+
+    if (keywords.length === 0 && (profile?.preferred_roles?.length ?? 0) > 0) {
+      setKeywords(profile!.preferred_roles);
+    }
+
+    if (locations.length === 0 && (profile?.preferred_locations?.length ?? 0) > 0) {
+      setLocations(profile!.preferred_locations);
+    }
+  }, [open, profile, keywords.length, locations.length]);
 
   const togglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
