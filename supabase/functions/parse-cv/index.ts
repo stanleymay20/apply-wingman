@@ -1,10 +1,36 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+async function extractTextFromPdf(arrayBuffer: ArrayBuffer): Promise<string> {
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    // avoid workers in the edge runtime (types don't include this flag)
+    disableWorker: true,
+  } as any);
+
+  const pdf = await loadingTask.promise;
+  const textParts: string[] = [];
+
+  // cap pages for performance
+  const maxPages = Math.min(pdf.numPages, 20);
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = (textContent.items as any[])
+      .map((item) => (typeof item?.str === "string" ? item.str : ""))
+      .filter(Boolean)
+      .join(" ");
+    textParts.push(pageText);
+  }
+
+  return textParts.join("\n\n");
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -29,14 +55,49 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { cvText, cvProfileId } = await req.json();
+    const { cvText, cvFileUrl, cvProfileId } = await req.json();
 
-    if (!cvText) {
+    let effectiveText: string | null = typeof cvText === "string" ? cvText : null;
+
+    // If text wasn't provided, try to extract it from an uploaded file (PDF)
+    if (!effectiveText && cvFileUrl) {
+      const url = String(cvFileUrl);
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch CV file (${res.status})`);
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      const buf = await res.arrayBuffer();
+
+      const looksLikePdf =
+        contentType.includes("application/pdf") || url.toLowerCase().includes(".pdf");
+
+      if (!looksLikePdf) {
+        return new Response(
+          JSON.stringify({ error: "Unsupported file type. Please paste CV text." }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      effectiveText = await extractTextFromPdf(buf);
+    }
+
+    if (!effectiveText || !effectiveText.trim()) {
       return new Response(JSON.stringify({ error: "CV text is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Keep within reasonable limits for the model
+    if (effectiveText.length > 60000) {
+      effectiveText = effectiveText.slice(0, 60000);
+    }
+
 
     const systemPrompt = `You are an expert CV/Resume parser. Extract structured information from the provided CV text and return a JSON object with the following structure:
 
@@ -83,7 +144,7 @@ Be thorough and extract all relevant information. Focus on technical skills, cer
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Parse this CV:\n\n${cvText}` },
+          { role: "user", content: `Parse this CV:\n\n${effectiveText}` },
         ],
         temperature: 0.1,
       }),

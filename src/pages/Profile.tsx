@@ -47,18 +47,20 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Upload file to storage
     const result = await uploadFile(file, "cv-files");
-    
+
     if (result) {
       // Create or update CV profile with file info
       let profileId = cvProfile?.id;
-      
+
       if (!cvProfile) {
-        const newProfile = await new Promise<any>((resolve) => {
+        const newProfile = await new Promise<any>((resolve, reject) => {
           createCVProfile(
             { cv_file_url: result.url, cv_file_name: result.fileName },
-            { onSuccess: resolve }
+            {
+              onSuccess: resolve,
+              onError: reject,
+            }
           );
         });
         profileId = newProfile?.id;
@@ -66,31 +68,40 @@ export default function Profile() {
       } else {
         await supabase
           .from("cv_profiles")
-          .update({ 
-            cv_file_url: result.url, 
-            cv_file_name: result.fileName 
+          .update({
+            cv_file_url: result.url,
+            cv_file_name: result.fileName,
           })
           .eq("id", cvProfile.id);
         await refetch();
       }
-      
-      // If text was extracted, auto-populate and optionally auto-parse
+
+      // Best-effort auto-parse:
+      // - TXT: we already have extractedText
+      // - PDF: edge function will fetch the signed URL and extract text server-side
+      const isPdf =
+        file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
       if (result.extractedText && result.extractedText.length >= 100) {
         setCvText(result.extractedText);
-        toast.success("Text extracted from file! Click 'Parse CV with AI' to analyze.");
-      } else if (result.extractedText && result.extractedText.length < 100) {
-        setCvText(result.extractedText);
-        toast.warning("Extracted text is too short. Please paste additional content.");
+        if (profileId) {
+          toast.info("Parsing uploaded CV...");
+          parseCV({ cvText: result.extractedText, cvProfileId: profileId });
+          setShowReparse(false);
+        }
+      } else if (isPdf && profileId) {
+        toast.info("Extracting text from PDF and parsing...");
+        parseCV({ cvFileUrl: result.url, cvProfileId: profileId });
+        setShowReparse(false);
       } else {
-        toast.info("Could not extract text automatically. Please paste your CV text below.");
+        toast.info("Upload complete. Please paste your CV text below to parse.");
       }
     }
-    
-    // Reset file input
+
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [uploadFile, cvProfile, createCVProfile, refetch]);
+  }, [uploadFile, cvProfile, createCVProfile, refetch, parseCV]);
 
   const handleParseCV = useCallback(() => {
     const validation = cvTextSchema.safeParse(cvText);
