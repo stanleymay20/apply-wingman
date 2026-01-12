@@ -10,7 +10,8 @@ import {
   Loader2,
   Plus,
   X,
-  User
+  User,
+  Palette
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { profileSettingsSchema, domainSchema, nameSchema } from "@/lib/validation";
+import { ThemeSelector } from "@/components/settings/ThemeSelector";
 
 export default function Settings() {
   const { profile, refreshProfile, signOut, loading } = useAuth();
@@ -440,8 +442,23 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Job Sources */}
+      {/* Theme Settings */}
       <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "200ms" }}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-primary/20">
+            <Palette className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Appearance</h2>
+            <p className="text-sm text-muted-foreground">Customize your dashboard theme</p>
+          </div>
+        </div>
+
+        <ThemeSelector />
+      </div>
+
+      {/* Job Sources */}
+      <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "250ms" }}>
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 rounded-lg bg-success/20">
             <Globe className="w-5 h-5 text-success" />

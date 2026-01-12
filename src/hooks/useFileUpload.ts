@@ -65,17 +65,17 @@ export function useFileUpload() {
 
         if (error) throw error;
 
-        // Get public URL
-        const { data: urlData } = supabase.storage
+        // Get signed URL for private buckets (cv-files, documents)
+        const { data: signedData, error: signedError } = await supabase.storage
           .from(bucket)
-          .getPublicUrl(data.path);
+          .createSignedUrl(data.path, 3600 * 24 * 7); // 7 days expiry
 
         setUploadProgress({ progress: 100, fileName: file.name });
 
         toast.success("File uploaded successfully");
 
         return {
-          url: urlData.publicUrl,
+          url: signedError ? data.path : signedData.signedUrl,
           path: data.path,
           fileName: file.name,
         };

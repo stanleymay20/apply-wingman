@@ -1,5 +1,8 @@
 project_id = "jlsoiujwcjgmvijcmvas"
 
+[functions.discover-jobs]
+verify_jwt = false
+
 [functions.parse-cv]
 verify_jwt = false
 
