@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,14 +30,19 @@ import {
   Target,
   Loader2,
   Rocket,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useJobs } from "@/hooks/useJobs";
 import { useCVProfile } from "@/hooks/useCVProfile";
 import { useJobDiscovery } from "@/hooks/useJobDiscovery";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
 import { JobDetailsDrawer } from "@/components/jobs/JobDetailsDrawer";
+import { JobDetailsPanel } from "@/components/jobs/JobDetailsPanel";
 import { SavedSearchesPanel } from "@/components/jobs/SavedSearchesPanel";
 import { BulkApplyDialog } from "@/components/jobs/BulkApplyDialog";
 import { DiscoveryStatusPanel } from "@/components/jobs/DiscoveryStatusPanel";
@@ -66,6 +71,10 @@ const PLATFORM_OPTIONS = [
 ];
 
 export default function Jobs() {
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+  const jobDetailsView = profile?.job_details_view || "drawer";
+
   const { jobs, isLoading, matchJob, isMatching, refetch } = useJobs();
   const { cvProfile } = useCVProfile();
   const { lastRun, clearLastRun } = useJobDiscovery();
@@ -75,7 +84,8 @@ export default function Jobs() {
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
   const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
-  const [selectedJob, setSelectedJob] = useState<typeof jobs[0] | null>(null);
+  const [selectedJob, setSelectedJob] = useState<(typeof jobs)[0] | null>(null);
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
@@ -127,6 +137,17 @@ export default function Jobs() {
     });
   };
 
+  const handleJobClick = (job: (typeof jobs)[number]) => {
+    if (jobDetailsView === "drawer") {
+      setSelectedJob(job);
+    } else if (jobDetailsView === "page") {
+      navigate(`/jobs/${job.id}`);
+    } else {
+      // inline expand/collapse
+      setExpandedJobId((prev) => (prev === job.id ? null : job.id));
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       discovered: "bg-info/10 text-info border-info/20",
@@ -148,8 +169,8 @@ export default function Jobs() {
       score >= 80
         ? "bg-success/10 text-success border-success/20"
         : score >= 60
-        ? "bg-warning/10 text-warning border-warning/20"
-        : "bg-muted text-muted-foreground border-border";
+          ? "bg-warning/10 text-warning border-warning/20"
+          : "bg-muted text-muted-foreground border-border";
     return (
       <Badge variant="outline" className={cn("font-mono", color)}>
         {score}%
@@ -294,10 +315,7 @@ export default function Jobs() {
                   <Target className="w-4 h-4 mr-2" />
                   Match All
                 </Button>
-                <Button
-                  onClick={() => setBulkApplyOpen(true)}
-                  disabled={matchedJobs.length === 0}
-                >
+                <Button onClick={() => setBulkApplyOpen(true)} disabled={matchedJobs.length === 0}>
                   <Rocket className="w-4 h-4 mr-2" />
                   Bulk Apply
                 </Button>
@@ -336,6 +354,7 @@ export default function Jobs() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {jobDetailsView === "inline" && <TableHead className="w-10" />}
                         <TableHead>Job Title</TableHead>
                         <TableHead>Company</TableHead>
                         <TableHead className="hidden md:table-cell">Location</TableHead>
@@ -347,72 +366,101 @@ export default function Jobs() {
                     </TableHeader>
                     <TableBody>
                       {filteredJobs.map((job) => (
-                        <TableRow
-                          key={job.id}
-                          className="cursor-pointer hover:bg-secondary/50"
-                          onClick={() => setSelectedJob(job)}
-                        >
-                          <TableCell>
-                            <div className="font-medium">{job.title}</div>
-                            {job.job_type && (
-                              <span className="text-xs text-muted-foreground capitalize">
-                                {job.job_type}
-                                {job.is_remote && " • Remote"}
-                              </span>
+                        <Fragment key={job.id}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-secondary/50"
+                            onClick={() => handleJobClick(job)}
+                          >
+                            {jobDetailsView === "inline" && (
+                              <TableCell className="w-10">
+                                {expandedJobId === job.id ? (
+                                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                )}
+                              </TableCell>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-muted-foreground" />
-                              {job.company}
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            <div className="flex items-center gap-2">
-                              <MapPin className="w-4 h-4 text-muted-foreground" />
-                              {job.location || "Not specified"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            <Badge variant="outline" className="capitalize">
-                              {job.source_platform}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{getStatusBadge(job.status || "discovered")}</TableCell>
-                          <TableCell>
-                            {job.match_score ? (
-                              getMatchScoreBadge(job.match_score)
-                            ) : (
+                            <TableCell>
+                              <div className="font-medium">{job.title}</div>
+                              {job.job_type && (
+                                <span className="text-xs text-muted-foreground capitalize">
+                                  {job.job_type}
+                                  {job.is_remote && " • Remote"}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-muted-foreground" />
+                                {job.company}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-muted-foreground" />
+                                {job.location || "Not specified"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell">
+                              <Badge variant="outline" className="capitalize">
+                                {job.source_platform}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(job.status || "discovered")}</TableCell>
+                            <TableCell>
+                              {job.match_score ? (
+                                getMatchScoreBadge(job.match_score)
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMatchJob(job.id);
+                                  }}
+                                  disabled={isMatching || !cvProfile}
+                                >
+                                  {matchingJobId === job.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Target className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleMatchJob(job.id);
+                                  window.open(job.source_url, "_blank");
                                 }}
-                                disabled={isMatching || !cvProfile}
                               >
-                                {matchingJobId === job.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Target className="w-4 h-4" />
-                                )}
+                                <ExternalLink className="w-4 h-4" />
                               </Button>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                window.open(job.source_url, "_blank");
-                              }}
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Inline expand */}
+                          {jobDetailsView === "inline" && expandedJobId === job.id && (
+                            <TableRow>
+                              <TableCell
+                                colSpan={8}
+                                className="bg-secondary/30 border-t-0"
+                              >
+                                <div className="p-4">
+                                  <JobDetailsPanel
+                                    job={job}
+                                    onMatch={handleMatchJob}
+                                    isMatching={isMatching && matchingJobId === job.id}
+                                    hasCV={!!cvProfile}
+                                  />
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
                       ))}
                     </TableBody>
                   </Table>
@@ -430,14 +478,19 @@ export default function Jobs() {
       </div>
 
       <JobDiscoveryDialog open={discoveryOpen} onOpenChange={setDiscoveryOpen} />
-      <JobDetailsDrawer
-        job={selectedJob}
-        open={!!selectedJob}
-        onOpenChange={(open) => !open && setSelectedJob(null)}
-        onMatch={handleMatchJob}
-        isMatching={isMatching}
-        hasCV={!!cvProfile}
-      />
+
+      {/* Drawer mode */}
+      {jobDetailsView === "drawer" && (
+        <JobDetailsDrawer
+          job={selectedJob}
+          open={!!selectedJob}
+          onOpenChange={(open) => !open && setSelectedJob(null)}
+          onMatch={handleMatchJob}
+          isMatching={isMatching}
+          hasCV={!!cvProfile}
+        />
+      )}
+
       <BulkApplyDialog
         open={bulkApplyOpen}
         onOpenChange={setBulkApplyOpen}

@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { useJobs } from "@/hooks/useJobs";
 import { useCVProfile } from "@/hooks/useCVProfile";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Briefcase } from "lucide-react";
+import { ArrowLeft, Briefcase, ExternalLink } from "lucide-react";
 
 export default function JobDetails() {
   const { jobId } = useParams();
@@ -21,10 +21,9 @@ export default function JobDetails() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => navigate("/jobs")}
-          >
+          <Button variant="outline" onClick={() => navigate("/jobs")}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
+            Back to Jobs
           </Button>
         </div>
 
@@ -38,18 +37,24 @@ export default function JobDetails() {
     );
   }
 
+  const handleMatch = (id: string) => {
+    if (cvProfile?.id) {
+      matchJob({ jobId: id, cvProfileId: cvProfile.id });
+    }
+  };
+
   return (
-    <main className="space-y-4">
+    <main className="space-y-6">
       <header className="flex items-center justify-between gap-3">
-        <Button variant="outline" onClick={() => navigate("/jobs")}
-        >
+        <Button variant="outline" onClick={() => navigate("/jobs")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back
+          Back to Jobs
         </Button>
 
         <Button asChild>
           <a href={job.source_url} target="_blank" rel="noopener noreferrer">
-            Open listing
+            <ExternalLink className="w-4 h-4 mr-2" />
+            View Original Listing
           </a>
         </Button>
       </header>
@@ -57,7 +62,7 @@ export default function JobDetails() {
       <section className="glass-card p-6">
         <JobDetailsPanel
           job={job}
-          onMatch={(id) => cvProfile?.id && matchJob({ jobId: id, cvProfileId: cvProfile.id })}
+          onMatch={handleMatch}
           isMatching={isMatching}
           hasCV={!!cvProfile}
         />
