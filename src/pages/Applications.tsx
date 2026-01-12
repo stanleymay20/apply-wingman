@@ -15,6 +15,7 @@ import {
   Inbox,
   CheckCircle2,
   Rocket,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -305,6 +306,7 @@ export default function Applications() {
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden sm:table-cell">Platform</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Match</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden xl:table-cell">Email Status</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden lg:table-cell">Applied</th>
                     <th className="text-right p-4 text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
@@ -344,6 +346,27 @@ export default function Applications() {
                       </td>
                       <td className="p-4">
                         <StatusBadge status={app.status || "pending"} />
+                      </td>
+                      <td className="p-4 hidden xl:table-cell">
+                        {app.application_method === "email" ? (
+                          <div className="flex items-center gap-1.5">
+                            {app.status === "submitted" ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+                                <span className="text-sm text-success font-medium">Sent</span>
+                              </>
+                            ) : app.status === "failed" ? (
+                              <>
+                                <AlertCircle className="w-3.5 h-3.5 text-destructive" />
+                                <span className="text-sm text-destructive font-medium">Failed</span>
+                              </>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="p-4 hidden lg:table-cell">
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">

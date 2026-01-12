@@ -449,6 +449,67 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Email Settings */}
+      <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "125ms" }}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-primary/20">
+            <Mail className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Email Settings</h2>
+            <p className="text-sm text-muted-foreground">Configure application email delivery</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Domain verification warning - This will show if domain is not verified */}
+          <div className="p-4 bg-warning/10 rounded-lg border border-warning/30">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-warning mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-warning">Domain Verification Required</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  To send application emails, your domain must be verified in Resend. 
+                  Go to <a href="https://resend.com/domains" target="_blank" rel="noopener noreferrer" className="text-primary underline">resend.com/domains</a> and add DNS records for <strong>scrolllibrary.app</strong>.
+                </p>
+                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  <p>✓ Add MX, SPF, and DKIM records to your DNS</p>
+                  <p>✓ Wait for verification (usually 5-10 minutes)</p>
+                  <p>✓ Status should show "Verified" with green checkmark</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-secondary/50 rounded-lg border border-border/50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground">Sender Email</p>
+                <p className="text-sm text-muted-foreground">Application emails are sent from</p>
+              </div>
+              <code className="px-2 py-1 bg-primary/10 text-primary rounded text-sm">
+                jobs@scrolllibrary.app
+              </code>
+            </div>
+          </div>
+
+          <div className="p-4 bg-secondary/50 rounded-lg border border-border/50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground">Daily Application Cap</p>
+                <p className="text-sm text-muted-foreground">Email applications are currently limited</p>
+              </div>
+              <span className="px-3 py-1 bg-warning/20 text-warning rounded-full text-sm font-medium">
+                1 / day
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Contact support to increase your daily email application limit.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Safety Controls */}
       <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "150ms" }}>
         <div className="flex items-center gap-3 mb-6">

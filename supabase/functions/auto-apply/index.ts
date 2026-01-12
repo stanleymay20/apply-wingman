@@ -8,18 +8,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Production email sender configuration
+const SENDER_EMAIL = "jobs@scrolllibrary.app";
+const SENDER_NAME = "ApplyPilot";
+
+// Application cap - set to 1 until manually approved for scaling
+const MAX_DAILY_APPLICATIONS = 1;
+
 interface ApplyRequest {
   applicationId: string;
   jobId: string;
   method: "email" | "ats_api" | "assisted";
-  // For email applications
   recipientEmail?: string;
-  // User details
   userName: string;
   userEmail: string;
   cvFileUrl?: string;
   coverLetter?: string;
-  // Job details
   jobTitle: string;
   company: string;
   sourceUrl: string;
@@ -33,6 +37,8 @@ interface ApplyResult {
   applicationUrl?: string;
   emailSent?: boolean;
   apiSubmitted?: boolean;
+  deliveryStatus?: "sent" | "failed";
+  emailId?: string;
 }
 
 serve(async (req) => {
@@ -40,14 +46,23 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // Get user ID from auth header
+  const authHeader = req.headers.get("Authorization");
+  let userId: string | null = null;
+  if (authHeader) {
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user } } = await supabase.auth.getUser(token);
+    userId = user?.id || null;
+  }
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const resendKey = Deno.env.get("RESEND_API_KEY");
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
     const request: ApplyRequest = await req.json();
     const {
       applicationId,
@@ -65,17 +80,56 @@ serve(async (req) => {
     } = request;
 
     console.log(`Auto-apply request: ${method} for ${jobTitle} at ${company}`);
+    console.log(`User: ${userName} (${userEmail}), Application ID: ${applicationId}`);
+
+    // Check daily application cap
+    if (userId && method === "email") {
+      const today = new Date().toISOString().split("T")[0];
+      const { data: todayApps } = await supabase
+        .from("application_logs")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("action", "auto_apply_email")
+        .gte("created_at", `${today}T00:00:00`)
+        .lte("created_at", `${today}T23:59:59`);
+
+      const todayCount = todayApps?.length || 0;
+      if (todayCount >= MAX_DAILY_APPLICATIONS) {
+        const errorMsg = `Daily application limit reached (${MAX_DAILY_APPLICATIONS}). Contact support to increase.`;
+        console.warn(errorMsg);
+        
+        // Log the rate limit
+        await supabase.from("application_logs").insert({
+          user_id: userId,
+          application_id: applicationId,
+          job_id: jobId,
+          action: "auto_apply_rate_limited",
+          message: errorMsg,
+          level: "warn",
+          details: { limit: MAX_DAILY_APPLICATIONS, current: todayCount },
+        });
+
+        return new Response(
+          JSON.stringify({ success: false, error: errorMsg }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     let result: ApplyResult;
 
     // Method 1: Email Application
     if (method === "email") {
       if (!resendKey) {
-        throw new Error("Email sending not configured. Please add RESEND_API_KEY.");
+        const error = "Email sending not configured. Please add RESEND_API_KEY.";
+        await logError(supabase, userId, applicationId, jobId, error, "config_error");
+        throw new Error(error);
       }
 
       if (!recipientEmail) {
-        throw new Error("Recipient email is required for email applications");
+        const error = "Recipient email is required for email applications";
+        await logError(supabase, userId, applicationId, jobId, error, "validation_error");
+        throw new Error(error);
       }
 
       const resend = new Resend(resendKey);
@@ -141,99 +195,117 @@ ${userName}`;
         });
       }
 
-      const { data: emailData, error: emailError } = await resend.emails.send({
-        from: `${userName} <applications@resend.dev>`,
-        to: [recipientEmail],
-        reply_to: userEmail,
-        subject: `Application for ${jobTitle} - ${userName}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            ${emailBody.split("\n").map((p) => `<p style="margin: 0 0 16px 0;">${p}</p>`).join("")}
-            <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
-            <p style="color: #666; font-size: 12px;">
-              This application was sent via ApplyPilot on behalf of ${userName} (${userEmail})
-            </p>
-          </div>
-        `,
-        attachments: attachments.length > 0 ? attachments : undefined,
-      });
+      console.log(`Sending email from ${SENDER_EMAIL} to ${recipientEmail}`);
 
-      if (emailError) {
-        throw new Error(`Email failed: ${emailError.message}`);
-      }
+      try {
+        const { data: emailData, error: emailError } = await resend.emails.send({
+          from: `${userName} via ${SENDER_NAME} <${SENDER_EMAIL}>`,
+          to: [recipientEmail],
+          reply_to: userEmail,
+          subject: `Application for ${jobTitle} - ${userName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              ${emailBody.split("\n").map((p) => `<p style="margin: 0 0 16px 0;">${p}</p>`).join("")}
+              <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
+              <p style="color: #666; font-size: 12px;">
+                This application was sent via ApplyPilot on behalf of ${userName} (${userEmail})
+              </p>
+            </div>
+          `,
+          attachments: attachments.length > 0 ? attachments : undefined,
+        });
 
-      result = {
-        success: true,
-        method: "email",
-        message: `Application email sent to ${recipientEmail}`,
-        emailSent: true,
-      };
+        if (emailError) {
+          console.error("Resend API error:", emailError);
+          
+          // Log delivery failure
+          await logDeliveryFailure(supabase, userId, applicationId, jobId, recipientEmail, emailError.message, jobTitle, company);
+          
+          throw new Error(`Email delivery failed: ${emailError.message}`);
+        }
 
-      console.log("Email sent successfully:", emailData);
+        console.log("Email sent successfully:", emailData);
 
-      // Get user ID from auth header
-      const authHeader = req.headers.get("Authorization");
-      let userId: string | null = null;
-      if (authHeader) {
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user } } = await supabase.auth.getUser(token);
-        userId = user?.id || null;
-      }
-
-      // Update application status
-      const { error: updateError } = await supabase
-        .from("applications")
-        .update({
-          status: "submitted",
-          applied_at: new Date().toISOString(),
-          application_method: "email",
-        })
-        .eq("id", applicationId);
-
-      if (updateError) {
-        console.error("Failed to update application:", updateError);
-      }
-
-      // Log the action
-      if (userId) {
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: applicationId,
-          job_id: jobId,
-          action: "auto_apply_email",
+        result = {
+          success: true,
+          method: "email",
           message: `Application email sent to ${recipientEmail}`,
-          level: "info",
-          details: { recipientEmail, emailId: emailData?.id },
-        });
+          emailSent: true,
+          deliveryStatus: "sent",
+          emailId: emailData?.id,
+        };
 
-        // Create notification for user
-        await supabase.from("notifications").insert({
-          user_id: userId,
-          type: "application_sent",
-          title: "Application Sent!",
-          message: `Your application for ${jobTitle} at ${company} was emailed to ${recipientEmail}`,
-          data: { applicationId, jobId, recipientEmail, emailId: emailData?.id },
-        });
+        // Update application status
+        const { error: updateError } = await supabase
+          .from("applications")
+          .update({
+            status: "submitted",
+            applied_at: new Date().toISOString(),
+            application_method: "email",
+          })
+          .eq("id", applicationId);
+
+        if (updateError) {
+          console.error("Failed to update application:", updateError);
+        }
+
+        // Log successful delivery
+        if (userId) {
+          await supabase.from("application_logs").insert({
+            user_id: userId,
+            application_id: applicationId,
+            job_id: jobId,
+            action: "auto_apply_email",
+            message: `✅ Email delivered to ${recipientEmail}`,
+            level: "info",
+            details: { 
+              recipientEmail, 
+              emailId: emailData?.id,
+              deliveryStatus: "sent",
+              senderEmail: SENDER_EMAIL,
+            },
+          });
+
+          // Create success notification
+          await supabase.from("notifications").insert({
+            user_id: userId,
+            type: "application_sent",
+            title: "✅ Application Delivered!",
+            message: `Your application for ${jobTitle} at ${company} was emailed to ${recipientEmail}`,
+            data: { 
+              applicationId, 
+              jobId, 
+              recipientEmail, 
+              emailId: emailData?.id,
+              deliveryStatus: "sent",
+            },
+          });
+        }
+
+      } catch (sendError) {
+        const errorMessage = sendError instanceof Error ? sendError.message : "Unknown email error";
+        console.error("Email send failed:", errorMessage);
+        
+        // Already logged in logDeliveryFailure if it was a Resend error
+        if (!errorMessage.includes("Email delivery failed")) {
+          await logDeliveryFailure(supabase, userId, applicationId, jobId, recipientEmail, errorMessage, jobTitle, company);
+        }
+        
+        throw sendError;
       }
     }
     // Method 2: ATS API Integration (Greenhouse, Lever)
     else if (method === "ats_api") {
       const url = sourceUrl.toLowerCase();
-      let submitted = false;
       let apiMessage = "";
 
       // Greenhouse integration
       if (url.includes("greenhouse.io") || url.includes("boards.greenhouse")) {
-        // Extract job ID from Greenhouse URL
         const ghMatch = url.match(/\/jobs\/(\d+)|gh_jid=(\d+)/);
         const ghJobId = ghMatch?.[1] || ghMatch?.[2];
 
         if (ghJobId) {
-          // Greenhouse has a public application API
-          // Note: This requires the company to enable API applications
-          apiMessage = `Greenhouse job detected (ID: ${ghJobId}). Direct API submission requires company approval. Opening application form with pre-filled data.`;
-          
-          // For now, we'll use assisted apply with pre-filled URL params
+          apiMessage = `Greenhouse job detected (ID: ${ghJobId}). Opening application form with pre-filled data.`;
           const applyUrl = `${sourceUrl}${sourceUrl.includes("?") ? "&" : "?"}name=${encodeURIComponent(userName)}&email=${encodeURIComponent(userEmail)}`;
           
           result = {
@@ -249,17 +321,12 @@ ${userName}`;
       }
       // Lever integration
       else if (url.includes("lever.co")) {
-        // Extract job ID from Lever URL
         const leverMatch = url.match(/lever\.co\/([^/]+)\/([a-f0-9-]+)/);
         const leverCompany = leverMatch?.[1];
         const leverJobId = leverMatch?.[2];
 
         if (leverJobId) {
-          // Lever has a public postings API
-          // Submit application via Lever API
           apiMessage = `Lever job detected (ID: ${leverJobId}). Opening application form.`;
-          
-          // Lever apply URL with prefill
           const applyUrl = `https://jobs.lever.co/${leverCompany}/${leverJobId}/apply`;
           
           result = {
@@ -305,16 +372,6 @@ ${userName}`;
     }
     // Method 3: Assisted Apply
     else if (method === "assisted") {
-      // Prepare clipboard data
-      const clipboardData = {
-        name: userName,
-        email: userEmail,
-        coverLetter: coverLetter || "",
-        jobTitle,
-        company,
-        applyUrl: sourceUrl,
-      };
-
       result = {
         success: true,
         method: "assisted",
@@ -339,12 +396,114 @@ ${userName}`;
     });
   } catch (error) {
     console.error("Auto-apply error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Auto-apply failed";
+    
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : "Auto-apply failed",
+        error: errorMessage,
+        deliveryStatus: "failed",
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
+
+// Helper function to log errors
+async function logError(
+  supabase: any,
+  userId: string | null,
+  applicationId: string,
+  jobId: string,
+  errorMessage: string,
+  errorType: string
+) {
+  if (userId) {
+    await supabase.from("application_logs").insert({
+      user_id: userId,
+      application_id: applicationId,
+      job_id: jobId,
+      action: `auto_apply_error_${errorType}`,
+      message: `❌ ${errorMessage}`,
+      level: "error",
+      details: { errorType, errorMessage },
+    });
+  }
+}
+
+// Helper function to log delivery failures with notification
+async function logDeliveryFailure(
+  supabase: any,
+  userId: string | null,
+  applicationId: string,
+  jobId: string,
+  recipientEmail: string,
+  errorMessage: string,
+  jobTitle: string,
+  company: string
+) {
+  // Update application with error
+  await supabase
+    .from("applications")
+    .update({
+      status: "failed",
+      error_message: errorMessage,
+    })
+    .eq("id", applicationId);
+
+  if (userId) {
+    // Log the failure
+    await supabase.from("application_logs").insert({
+      user_id: userId,
+      application_id: applicationId,
+      job_id: jobId,
+      action: "auto_apply_email_failed",
+      message: `❌ Email delivery failed to ${recipientEmail}: ${errorMessage}`,
+      level: "error",
+      details: { 
+        recipientEmail, 
+        errorMessage,
+        deliveryStatus: "failed",
+      },
+    });
+
+    // Create failure notification
+    await supabase.from("notifications").insert({
+      user_id: userId,
+      type: "application_failed",
+      title: "❌ Email Delivery Failed",
+      message: `Failed to send application for ${jobTitle} at ${company} to ${recipientEmail}. Error: ${errorMessage}`,
+      data: { 
+        applicationId, 
+        jobId, 
+        recipientEmail, 
+        errorMessage,
+        deliveryStatus: "failed",
+      },
+    });
+
+    // Increment error count in daily stats
+    const today = new Date().toISOString().split("T")[0];
+    const { data: existingStats } = await supabase
+      .from("daily_stats")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("date", today)
+      .single();
+
+    if (existingStats) {
+      await supabase
+        .from("daily_stats")
+        .update({
+          applications_failed: (existingStats.applications_failed || 0) + 1,
+        })
+        .eq("id", existingStats.id);
+    } else {
+      await supabase.from("daily_stats").insert({
+        user_id: userId,
+        date: today,
+        applications_failed: 1,
+      });
+    }
+  }
+}
