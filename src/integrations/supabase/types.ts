@@ -80,6 +80,8 @@ export type Database = {
           created_at: string | null
           custom_responses: Json | null
           cv_profile_id: string | null
+          documents_required: string[] | null
+          documents_uploaded: string[] | null
           error_message: string | null
           id: string
           job_id: string
@@ -98,6 +100,8 @@ export type Database = {
           created_at?: string | null
           custom_responses?: Json | null
           cv_profile_id?: string | null
+          documents_required?: string[] | null
+          documents_uploaded?: string[] | null
           error_message?: string | null
           id?: string
           job_id: string
@@ -116,6 +120,8 @@ export type Database = {
           created_at?: string | null
           custom_responses?: Json | null
           cv_profile_id?: string | null
+          documents_required?: string[] | null
+          documents_uploaded?: string[] | null
           error_message?: string | null
           id?: string
           job_id?: string

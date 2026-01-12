@@ -9,7 +9,6 @@ import {
   Briefcase,
   MapPin,
   Code,
-  GraduationCap,
   Loader2,
   Sparkles,
   AlertCircle
@@ -21,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useCVProfile } from "@/hooks/useCVProfile";
+import { useFileUpload } from "@/hooks/useFileUpload";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -29,52 +29,61 @@ import { cvTextSchema, skillSchema, roleSchema, locationSchema } from "@/lib/val
 export default function Profile() {
   const { profile, refreshProfile } = useAuth();
   const { cvProfile, isLoading, parseCV, isParsing, createCVProfile, refetch } = useCVProfile();
+  const { uploadFile, isUploading, uploadProgress } = useFileUpload();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [newSkill, setNewSkill] = useState("");
   const [newRole, setNewRole] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [cvText, setCvText] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
+  const [showReparse, setShowReparse] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const skills = cvProfile?.skills || [];
   const preferredRoles = profile?.preferred_roles || [];
   const preferredLocations = profile?.preferred_locations || [];
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.includes("pdf") && !file.type.includes("text")) {
-      toast.error("Please upload a PDF or text file");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("File size must be less than 5MB");
-      return;
-    }
-
-    setIsUploading(true);
+    // Upload file to storage
+    const result = await uploadFile(file, "cv-files");
     
-    try {
+    if (result) {
+      // Read file content for text files
       if (file.type.includes("text")) {
         const text = await file.text();
         setCvText(text);
-        
-        if (!cvProfile) {
-          createCVProfile({ cv_file_name: file.name });
-        }
-      } else {
-        toast.info("PDF detected. Please paste your CV text below for AI parsing.");
       }
-    } catch (error) {
-      toast.error("Failed to read file");
-    } finally {
-      setIsUploading(false);
+      
+      // Create or update CV profile with file info
+      if (!cvProfile) {
+        createCVProfile({ 
+          cv_file_url: result.url, 
+          cv_file_name: result.fileName 
+        });
+      } else {
+        await supabase
+          .from("cv_profiles")
+          .update({ 
+            cv_file_url: result.url, 
+            cv_file_name: result.fileName 
+          })
+          .eq("id", cvProfile.id);
+        refetch();
+      }
+      
+      if (!file.type.includes("text")) {
+        toast.info("File uploaded! Please paste the text content below for AI parsing.");
+      }
     }
-  };
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [uploadFile, cvProfile, createCVProfile, refetch]);
 
   const handleParseCV = useCallback(() => {
     const validation = cvTextSchema.safeParse(cvText);
@@ -87,6 +96,7 @@ export default function Profile() {
     
     setErrors({});
     parseCV({ cvText: validation.data, cvProfileId: cvProfile?.id });
+    setShowReparse(false);
   }, [cvText, cvProfile?.id, parseCV]);
 
   const addSkill = useCallback(async () => {
@@ -226,6 +236,8 @@ export default function Profile() {
     return <LoadingSpinner fullPage text="Loading profile..." />;
   }
 
+  const showUploadForm = !cvProfile?.last_parsed_at || showReparse;
+
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
@@ -249,7 +261,7 @@ export default function Profile() {
             </div>
           </div>
           
-          {cvProfile?.last_parsed_at && (
+          {cvProfile?.last_parsed_at && !showReparse && (
             <div className="flex items-center gap-2 text-success">
               <CheckCircle className="w-5 h-5" />
               <span className="text-sm font-medium">Parsed</span>
@@ -263,23 +275,41 @@ export default function Profile() {
           accept=".pdf,.txt,.doc,.docx"
           onChange={handleFileUpload}
           className="hidden"
+          aria-label="Upload CV file"
         />
 
-        {!cvProfile?.last_parsed_at ? (
+        {showUploadForm ? (
           <div className="space-y-4">
             <div 
-              className="border-2 border-dashed border-border/50 rounded-xl p-8 text-center hover:border-primary/50 transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
+              className={cn(
+                "border-2 border-dashed border-border/50 rounded-xl p-8 text-center transition-colors cursor-pointer",
+                isUploading ? "border-primary/50 bg-primary/5" : "hover:border-primary/50"
+              )}
+              onClick={() => !isUploading && fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && !isUploading && fileInputRef.current?.click()}
+              aria-label="Click to upload CV file"
             >
               {isUploading ? (
-                <Loader2 className="w-12 h-12 text-primary mx-auto mb-4 animate-spin" />
+                <>
+                  <Loader2 className="w-12 h-12 text-primary mx-auto mb-4 animate-spin" />
+                  <p className="text-foreground font-medium mb-2">
+                    Uploading {uploadProgress?.fileName}...
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {uploadProgress?.progress}% complete
+                  </p>
+                </>
               ) : (
-                <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <>
+                  <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-foreground font-medium mb-2">
+                    Drop your CV here or click to upload
+                  </p>
+                  <p className="text-sm text-muted-foreground">PDF, DOC, DOCX, or TXT (max 5MB)</p>
+                </>
               )}
-              <p className="text-foreground font-medium mb-2">
-                Drop your CV here or click to upload
-              </p>
-              <p className="text-sm text-muted-foreground">PDF or text format (max 5MB)</p>
             </div>
 
             <div className="text-center text-sm text-muted-foreground">or paste your CV text below</div>
@@ -294,9 +324,10 @@ export default function Profile() {
                   errors.cvText && "border-destructive"
                 )}
                 maxLength={50000}
+                aria-describedby="cv-text-error"
               />
               {errors.cvText && (
-                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                <p id="cv-text-error" className="text-xs text-destructive mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   {errors.cvText}
                 </p>
@@ -306,23 +337,37 @@ export default function Profile() {
               </p>
             </div>
 
-            <Button 
-              onClick={handleParseCV} 
-              className="w-full"
-              disabled={isParsing || cvText.length < 100}
-            >
-              {isParsing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Parsing with AI...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Parse CV with AI
-                </>
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleParseCV} 
+                className="flex-1"
+                disabled={isParsing || cvText.length < 100}
+              >
+                {isParsing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Parsing with AI...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Parse CV with AI
+                  </>
+                )}
+              </Button>
+              {showReparse && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowReparse(false);
+                    setCvText("");
+                    setErrors({});
+                  }}
+                >
+                  Cancel
+                </Button>
               )}
-            </Button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border/50">
@@ -330,10 +375,10 @@ export default function Profile() {
               <FileText className="w-8 h-8 text-muted-foreground" />
               <div>
                 <p className="font-medium text-foreground">
-                  {cvProfile.cv_file_name || "CV Parsed"}
+                  {cvProfile?.cv_file_name || "CV Parsed"}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Last parsed: {new Date(cvProfile.last_parsed_at).toLocaleDateString()}
+                  Last parsed: {cvProfile?.last_parsed_at ? new Date(cvProfile.last_parsed_at).toLocaleDateString() : "N/A"}
                 </p>
               </div>
             </div>
@@ -341,6 +386,7 @@ export default function Profile() {
               variant="outline" 
               size="sm"
               onClick={() => {
+                setShowReparse(true);
                 setCvText("");
                 setErrors({});
               }}
@@ -351,6 +397,26 @@ export default function Profile() {
           </div>
         )}
       </div>
+
+      {/* CV Summary */}
+      {cvProfile?.summary && (
+        <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "50ms" }}>
+          <h2 className="text-lg font-semibold text-foreground mb-4">Professional Summary</h2>
+          <p className="text-muted-foreground">{cvProfile.summary}</p>
+          <div className="flex gap-4 mt-4 flex-wrap">
+            {cvProfile.experience_years && cvProfile.experience_years > 0 && (
+              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                {cvProfile.experience_years} years experience
+              </Badge>
+            )}
+            {cvProfile.seniority_level && (
+              <Badge variant="outline" className="bg-success/10 text-success border-success/30">
+                {cvProfile.seniority_level.charAt(0).toUpperCase() + cvProfile.seniority_level.slice(1)}
+              </Badge>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Extracted Profile */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -517,54 +583,20 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Experience Summary */}
-        <div className="glass-card p-6 animate-scale-in" style={{ animationDelay: "250ms" }}>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-lg bg-primary/20">
-              <GraduationCap className="w-5 h-5 text-primary" />
-            </div>
-            <h2 className="text-lg font-semibold text-foreground">Experience</h2>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Years of Experience</span>
-              <span className="font-medium text-foreground">
-                {cvProfile?.experience_years || 0} years
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Seniority Level</span>
-              <span className="font-medium text-foreground capitalize">
-                {cvProfile?.seniority_level || 'Not set'}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Visa Required</span>
-              <span className={cn(
-                "font-medium",
-                profile?.visa_required ? "text-warning" : "text-success"
-              )}>
-                {profile?.visa_required ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Languages</span>
-              <span className="font-medium text-foreground">
-                {cvProfile?.languages?.join(", ") || 'Not set'}
-              </span>
+        {/* Languages */}
+        {cvProfile?.languages && cvProfile.languages.length > 0 && (
+          <div className="glass-card p-6 animate-scale-in" style={{ animationDelay: "250ms" }}>
+            <h2 className="text-lg font-semibold text-foreground mb-4">Languages</h2>
+            <div className="flex flex-wrap gap-2">
+              {cvProfile.languages.map((lang, index) => (
+                <Badge key={index} variant="outline" className="bg-info/10 text-info border-info/30">
+                  {lang}
+                </Badge>
+              ))}
             </div>
           </div>
-        </div>
+        )}
       </div>
-
-      {/* Summary */}
-      {cvProfile?.summary && (
-        <div className="glass-card p-6 mb-6 animate-scale-in">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Professional Summary</h3>
-          <p className="text-muted-foreground leading-relaxed">{cvProfile.summary}</p>
-        </div>
-      )}
     </div>
   );
 }
