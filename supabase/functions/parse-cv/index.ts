@@ -1,36 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as pdfjsLib from "https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-async function extractTextFromPdf(arrayBuffer: ArrayBuffer): Promise<string> {
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(arrayBuffer),
-    // avoid workers in the edge runtime (types don't include this flag)
-    disableWorker: true,
-  } as any);
-
-  const pdf = await loadingTask.promise;
-  const textParts: string[] = [];
-
-  // cap pages for performance
-  const maxPages = Math.min(pdf.numPages, 20);
-  for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = (textContent.items as any[])
-      .map((item) => (typeof item?.str === "string" ? item.str : ""))
-      .filter(Boolean)
-      .join(" ");
-    textParts.push(pageText);
-  }
-
-  return textParts.join("\n\n");
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -56,50 +31,47 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { cvText, cvFileUrl, cvProfileId } = await req.json();
+    console.log("Received request:", { hasCvText: !!cvText, hasCvFileUrl: !!cvFileUrl, cvProfileId });
 
     let effectiveText: string | null = typeof cvText === "string" ? cvText : null;
+    let pdfBase64: string | null = null;
 
-    // If text wasn't provided, try to extract it from an uploaded file (PDF)
+    // If text wasn't provided but we have a file URL, fetch it
     if (!effectiveText && cvFileUrl) {
       const url = String(cvFileUrl);
+      console.log("Fetching CV file from URL...");
+      
       const res = await fetch(url);
       if (!res.ok) {
+        console.error("Failed to fetch CV file:", res.status, res.statusText);
         throw new Error(`Failed to fetch CV file (${res.status})`);
       }
 
       const contentType = res.headers.get("content-type") || "";
       const buf = await res.arrayBuffer();
+      console.log("Downloaded file, size:", buf.byteLength, "contentType:", contentType);
 
-      const looksLikePdf =
-        contentType.includes("application/pdf") || url.toLowerCase().includes(".pdf");
+      const isPdf = contentType.includes("application/pdf") || url.toLowerCase().includes(".pdf");
 
-      if (!looksLikePdf) {
-        return new Response(
-          JSON.stringify({ error: "Unsupported file type. Please paste CV text." }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
+      if (isPdf) {
+        // Convert PDF to base64 for Gemini's document understanding
+        pdfBase64 = base64Encode(buf);
+        console.log("Converted PDF to base64, length:", pdfBase64.length);
+      } else {
+        // Try to read as text
+        const decoder = new TextDecoder("utf-8");
+        effectiveText = decoder.decode(buf);
       }
-
-      effectiveText = await extractTextFromPdf(buf);
     }
 
-    if (!effectiveText || !effectiveText.trim()) {
-      return new Response(JSON.stringify({ error: "CV text is required" }), {
+    if (!effectiveText && !pdfBase64) {
+      return new Response(JSON.stringify({ error: "CV text or PDF file is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Keep within reasonable limits for the model
-    if (effectiveText.length > 60000) {
-      effectiveText = effectiveText.slice(0, 60000);
-    }
-
-
-    const systemPrompt = `You are an expert CV/Resume parser. Extract structured information from the provided CV text and return a JSON object with the following structure:
+    const systemPrompt = `You are an expert CV/Resume parser. Extract structured information from the provided CV and return a JSON object with the following structure:
 
 {
   "full_name": "string",
@@ -132,8 +104,40 @@ serve(async (req) => {
   ]
 }
 
-Be thorough and extract all relevant information. Focus on technical skills, certifications, and quantifiable achievements.`;
+Be thorough and extract all relevant information. Focus on technical skills, certifications, and quantifiable achievements. Return ONLY the JSON object, no markdown code blocks.`;
 
+    // Build messages based on whether we have text or PDF
+    let messages: any[];
+    if (pdfBase64) {
+      // Use Gemini's document understanding with inline PDF
+      console.log("Using PDF document understanding...");
+      messages = [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Parse this CV/Resume document and extract the structured information:",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:application/pdf;base64,${pdfBase64}`,
+              },
+            },
+          ],
+        },
+      ];
+    } else {
+      console.log("Using text-based parsing...");
+      messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Parse this CV:\n\n${effectiveText}` },
+      ];
+    }
+
+    console.log("Sending to AI Gateway...");
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -141,11 +145,8 @@ Be thorough and extract all relevant information. Focus on technical skills, cer
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Parse this CV:\n\n${effectiveText}` },
-        ],
+        model: "google/gemini-2.5-flash",
+        messages,
         temperature: 0.1,
       }),
     });
@@ -169,6 +170,7 @@ Be thorough and extract all relevant information. Focus on technical skills, cer
     }
 
     const aiData = await response.json();
+    console.log("AI response received");
     const content = aiData.choices?.[0]?.message?.content;
 
     if (!content) {
@@ -186,8 +188,11 @@ Be thorough and extract all relevant information. Focus on technical skills, cer
       throw new Error("Failed to parse CV data");
     }
 
+    console.log("Parsed CV successfully:", { skills: parsedCV.skills?.length, experience_years: parsedCV.experience_years });
+
     // Update the CV profile in the database if cvProfileId is provided
     if (cvProfileId) {
+      console.log("Updating CV profile:", cvProfileId);
       const { error: updateError } = await supabase
         .from("cv_profiles")
         .update({
@@ -206,6 +211,8 @@ Be thorough and extract all relevant information. Focus on technical skills, cer
 
       if (updateError) {
         console.error("Failed to update CV profile:", updateError);
+      } else {
+        console.log("CV profile updated successfully");
       }
     }
 
