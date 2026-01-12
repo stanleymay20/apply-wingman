@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { 
   Upload, 
   FileText, 
@@ -11,7 +11,8 @@ import {
   Code,
   GraduationCap,
   Loader2,
-  Sparkles
+  Sparkles,
+  AlertCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,10 +23,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCVProfile } from "@/hooks/useCVProfile";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { cvTextSchema, skillSchema, roleSchema, locationSchema, safeValidate } from "@/lib/validation";
 
 export default function Profile() {
   const { profile, refreshProfile } = useAuth();
-  const { cvProfile, isLoading, parseCV, isParsing, createCVProfile } = useCVProfile();
+  const { cvProfile, isLoading, parseCV, isParsing, createCVProfile, refetch } = useCVProfile();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [newSkill, setNewSkill] = useState("");
@@ -33,6 +36,7 @@ export default function Profile() {
   const [newLocation, setNewLocation] = useState("");
   const [cvText, setCvText] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const skills = cvProfile?.skills || [];
   const preferredRoles = profile?.preferred_roles || [];
@@ -47,10 +51,14 @@ export default function Profile() {
       return;
     }
 
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB");
+      return;
+    }
+
     setIsUploading(true);
     
     try {
-      // Read file content for text files
       if (file.type.includes("text")) {
         const text = await file.text();
         setCvText(text);
@@ -59,7 +67,6 @@ export default function Profile() {
           createCVProfile({ cv_file_name: file.name });
         }
       } else {
-        // For PDFs, we'd need a PDF parser - for now show the manual input option
         toast.info("PDF detected. Please paste your CV text below for AI parsing.");
       }
     } catch (error) {
@@ -69,19 +76,37 @@ export default function Profile() {
     }
   };
 
-  const handleParseCV = () => {
-    if (!cvText.trim()) {
-      toast.error("Please enter or paste your CV text");
+  const handleParseCV = useCallback(() => {
+    const validation = cvTextSchema.safeParse(cvText);
+    if (!validation.success) {
+      const errorMsg = validation.error.errors[0]?.message || "Invalid CV text";
+      setErrors({ cvText: errorMsg });
+      toast.error(errorMsg);
       return;
     }
     
-    parseCV({ cvText, cvProfileId: cvProfile?.id });
-  };
+    setErrors({});
+    parseCV({ cvText: validation.data, cvProfileId: cvProfile?.id });
+  }, [cvText, cvProfile?.id, parseCV]);
 
-  const addSkill = async () => {
-    if (!newSkill.trim() || !cvProfile) return;
+  const addSkill = useCallback(async () => {
+    const validation = skillSchema.safeParse(newSkill);
+    if (!validation.success) {
+      setErrors({ skill: validation.error.errors[0]?.message || "Invalid skill" });
+      return;
+    }
     
-    const updatedSkills = [...skills, newSkill.trim()];
+    if (!cvProfile) {
+      toast.error("Please parse your CV first");
+      return;
+    }
+    
+    if (skills.includes(validation.data)) {
+      toast.error("Skill already exists");
+      return;
+    }
+    
+    const updatedSkills = [...skills, validation.data];
     const { error } = await supabase
       .from("cv_profiles")
       .update({ skills: updatedSkills })
@@ -91,11 +116,13 @@ export default function Profile() {
       toast.error("Failed to add skill");
     } else {
       setNewSkill("");
+      setErrors({});
+      refetch();
       toast.success("Skill added");
     }
-  };
+  }, [newSkill, cvProfile, skills, refetch]);
 
-  const removeSkill = async (index: number) => {
+  const removeSkill = useCallback(async (index: number) => {
     if (!cvProfile) return;
     
     const updatedSkills = skills.filter((_, i) => i !== index);
@@ -106,13 +133,26 @@ export default function Profile() {
     
     if (error) {
       toast.error("Failed to remove skill");
+    } else {
+      refetch();
     }
-  };
+  }, [cvProfile, skills, refetch]);
 
-  const addRole = async () => {
-    if (!newRole.trim() || !profile) return;
+  const addRole = useCallback(async () => {
+    const validation = roleSchema.safeParse(newRole);
+    if (!validation.success) {
+      setErrors({ role: validation.error.errors[0]?.message || "Invalid role" });
+      return;
+    }
     
-    const updatedRoles = [...preferredRoles, newRole.trim()];
+    if (!profile) return;
+    
+    if (preferredRoles.includes(validation.data)) {
+      toast.error("Role already exists");
+      return;
+    }
+    
+    const updatedRoles = [...preferredRoles, validation.data];
     const { error } = await supabase
       .from("profiles")
       .update({ preferred_roles: updatedRoles })
@@ -122,12 +162,13 @@ export default function Profile() {
       toast.error("Failed to add role");
     } else {
       setNewRole("");
+      setErrors({});
       refreshProfile();
       toast.success("Role added");
     }
-  };
+  }, [newRole, profile, preferredRoles, refreshProfile]);
 
-  const removeRole = async (index: number) => {
+  const removeRole = useCallback(async (index: number) => {
     if (!profile) return;
     
     const updatedRoles = preferredRoles.filter((_, i) => i !== index);
@@ -137,12 +178,23 @@ export default function Profile() {
       .eq("id", profile.id);
     
     if (!error) refreshProfile();
-  };
+  }, [profile, preferredRoles, refreshProfile]);
 
-  const addLocation = async () => {
-    if (!newLocation.trim() || !profile) return;
+  const addLocation = useCallback(async () => {
+    const validation = locationSchema.safeParse(newLocation);
+    if (!validation.success) {
+      setErrors({ location: validation.error.errors[0]?.message || "Invalid location" });
+      return;
+    }
     
-    const updatedLocations = [...preferredLocations, newLocation.trim()];
+    if (!profile) return;
+    
+    if (preferredLocations.includes(validation.data)) {
+      toast.error("Location already exists");
+      return;
+    }
+    
+    const updatedLocations = [...preferredLocations, validation.data];
     const { error } = await supabase
       .from("profiles")
       .update({ preferred_locations: updatedLocations })
@@ -152,12 +204,13 @@ export default function Profile() {
       toast.error("Failed to add location");
     } else {
       setNewLocation("");
+      setErrors({});
       refreshProfile();
       toast.success("Location added");
     }
-  };
+  }, [newLocation, profile, preferredLocations, refreshProfile]);
 
-  const removeLocation = async (index: number) => {
+  const removeLocation = useCallback(async (index: number) => {
     if (!profile) return;
     
     const updatedLocations = preferredLocations.filter((_, i) => i !== index);
@@ -167,14 +220,10 @@ export default function Profile() {
       .eq("id", profile.id);
     
     if (!error) refreshProfile();
-  };
+  }, [profile, preferredLocations, refreshProfile]);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingSpinner fullPage text="Loading profile..." />;
   }
 
   return (
@@ -230,22 +279,37 @@ export default function Profile() {
               <p className="text-foreground font-medium mb-2">
                 Drop your CV here or click to upload
               </p>
-              <p className="text-sm text-muted-foreground">PDF or text format</p>
+              <p className="text-sm text-muted-foreground">PDF or text format (max 5MB)</p>
             </div>
 
             <div className="text-center text-sm text-muted-foreground">or paste your CV text below</div>
 
-            <Textarea
-              placeholder="Paste your CV/resume text here for AI parsing..."
-              value={cvText}
-              onChange={(e) => setCvText(e.target.value)}
-              className="min-h-[200px] bg-secondary border-border"
-            />
+            <div>
+              <Textarea
+                placeholder="Paste your CV/resume text here for AI parsing... (minimum 100 characters)"
+                value={cvText}
+                onChange={(e) => setCvText(e.target.value)}
+                className={cn(
+                  "min-h-[200px] bg-secondary border-border",
+                  errors.cvText && "border-destructive"
+                )}
+                maxLength={50000}
+              />
+              {errors.cvText && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {errors.cvText}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                {cvText.length.toLocaleString()} / 50,000 characters
+              </p>
+            </div>
 
             <Button 
               onClick={handleParseCV} 
               className="w-full"
-              disabled={isParsing || !cvText.trim()}
+              disabled={isParsing || cvText.length < 100}
             >
               {isParsing ? (
                 <>
@@ -278,6 +342,7 @@ export default function Profile() {
               size="sm"
               onClick={() => {
                 setCvText("");
+                setErrors({});
               }}
             >
               <Edit2 className="w-4 h-4 mr-2" />
@@ -312,6 +377,7 @@ export default function Profile() {
                 <button 
                   onClick={() => removeSkill(index)}
                   className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label={`Remove ${skill}`}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -322,17 +388,26 @@ export default function Profile() {
             )}
           </div>
 
-          <div className="flex gap-2">
-            <Input
-              placeholder="Add skill..."
-              value={newSkill}
-              onChange={(e) => setNewSkill(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addSkill()}
-              className="bg-secondary border-border"
-            />
-            <Button variant="outline" size="icon" onClick={addSkill}>
-              <Plus className="w-4 h-4" />
-            </Button>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add skill..."
+                value={newSkill}
+                onChange={(e) => {
+                  setNewSkill(e.target.value);
+                  if (errors.skill) setErrors({ ...errors, skill: "" });
+                }}
+                onKeyDown={(e) => e.key === "Enter" && addSkill()}
+                className={cn("bg-secondary border-border", errors.skill && "border-destructive")}
+                maxLength={50}
+              />
+              <Button variant="outline" size="icon" onClick={addSkill} aria-label="Add skill">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+            {errors.skill && (
+              <p className="text-xs text-destructive">{errors.skill}</p>
+            )}
           </div>
         </div>
 
@@ -355,6 +430,7 @@ export default function Profile() {
                 <button 
                   onClick={() => removeRole(index)}
                   className="text-muted-foreground hover:text-destructive transition-colors"
+                  aria-label={`Remove ${role}`}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -365,17 +441,26 @@ export default function Profile() {
             )}
           </div>
 
-          <div className="flex gap-2">
-            <Input
-              placeholder="Add role..."
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addRole()}
-              className="bg-secondary border-border"
-            />
-            <Button variant="outline" size="icon" onClick={addRole}>
-              <Plus className="w-4 h-4" />
-            </Button>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add role..."
+                value={newRole}
+                onChange={(e) => {
+                  setNewRole(e.target.value);
+                  if (errors.role) setErrors({ ...errors, role: "" });
+                }}
+                onKeyDown={(e) => e.key === "Enter" && addRole()}
+                className={cn("bg-secondary border-border", errors.role && "border-destructive")}
+                maxLength={100}
+              />
+              <Button variant="outline" size="icon" onClick={addRole} aria-label="Add role">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+            {errors.role && (
+              <p className="text-xs text-destructive">{errors.role}</p>
+            )}
           </div>
         </div>
 
@@ -398,24 +483,37 @@ export default function Profile() {
                 <button 
                   onClick={() => removeLocation(index)}
                   className="text-muted-foreground hover:text-destructive transition-colors"
+                  aria-label={`Remove ${location}`}
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
+            {preferredLocations.length === 0 && (
+              <p className="text-sm text-muted-foreground p-3">Add your preferred work locations</p>
+            )}
           </div>
 
-          <div className="flex gap-2">
-            <Input
-              placeholder="Add location..."
-              value={newLocation}
-              onChange={(e) => setNewLocation(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addLocation()}
-              className="bg-secondary border-border"
-            />
-            <Button variant="outline" size="icon" onClick={addLocation}>
-              <Plus className="w-4 h-4" />
-            </Button>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add location..."
+                value={newLocation}
+                onChange={(e) => {
+                  setNewLocation(e.target.value);
+                  if (errors.location) setErrors({ ...errors, location: "" });
+                }}
+                onKeyDown={(e) => e.key === "Enter" && addLocation()}
+                className={cn("bg-secondary border-border", errors.location && "border-destructive")}
+                maxLength={100}
+              />
+              <Button variant="outline" size="icon" onClick={addLocation} aria-label="Add location">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+            {errors.location && (
+              <p className="text-xs text-destructive">{errors.location}</p>
+            )}
           </div>
         </div>
 
