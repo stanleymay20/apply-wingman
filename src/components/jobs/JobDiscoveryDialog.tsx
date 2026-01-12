@@ -46,28 +46,22 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   const [searchName, setSearchName] = useState("");
   const [initialized, setInitialized] = useState(false);
 
-  // Reset and initialize when dialog opens
+  // Reset state when dialog opens - start fresh, don't auto-populate from profile
   useEffect(() => {
     if (open && !initialized) {
-      const preferredRoles = (profile?.preferred_roles || []).filter(Boolean);
-      const preferredLocations = (profile?.preferred_locations || []).filter(Boolean);
-
-      // Set defaults from profile - keep existing keywords if user already added some
-      if (keywords.length === 0) {
-        setKeywords(preferredRoles);
-      }
+      // Start with empty keywords - user adds what they want to search
+      // Only set default location if none exist
       if (locations.length === 0) {
-        setLocations(preferredLocations.length > 0 ? preferredLocations : ["Remote"]);
+        setLocations(["Remote"]);
       }
       setInitialized(true);
     }
     
-    // Reset initialized flag when dialog closes so next open will re-read profile
+    // Reset initialized flag when dialog closes
     if (!open) {
       setInitialized(false);
-      // Don't clear keywords/locations - keep them for next open
     }
-  }, [open, profile, initialized, keywords.length, locations.length]);
+  }, [open, initialized, locations.length]);
 
   const togglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
