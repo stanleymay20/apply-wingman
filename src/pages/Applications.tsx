@@ -35,7 +35,7 @@ import { Label } from "@/components/ui/label";
 import { useApplications } from "@/hooks/useApplications";
 import { useJobs } from "@/hooks/useJobs";
 import { toast } from "sonner";
-import { jobSchema, safeValidate } from "@/lib/validation";
+import { jobSchema } from "@/lib/validation";
 import { formatDistanceToNow } from "date-fns";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
@@ -84,7 +84,12 @@ export default function Applications() {
       return;
     }
     
-    createJob(validation.data);
+    createJob({
+      title: validation.data.title,
+      company: validation.data.company,
+      source_url: validation.data.source_url,
+      source_platform: validation.data.source_platform,
+    });
     setNewJob({ title: "", company: "", source_url: "", source_platform: "linkedin" });
     setFormErrors({});
     setIsAddingJob(false);

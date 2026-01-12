@@ -6,12 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Zap, Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, Mail, Lock, User, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import logoImage from "@/assets/logo.png";
 
-const emailSchema = z.string().email("Please enter a valid email address");
-const passwordSchema = z.string().min(8, "Password must be at least 8 characters");
+const emailSchema = z.string().trim().email("Please enter a valid email address").max(255);
+const passwordSchema = z.string().min(8, "Password must be at least 8 characters").max(100);
+const nameSchema = z.string().trim().max(100);
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -21,7 +23,7 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
 
   useEffect(() => {
     if (user && !loading) {
@@ -29,17 +31,24 @@ export default function Auth() {
     }
   }, [user, loading, navigate]);
 
-  const validateForm = () => {
-    const newErrors: { email?: string; password?: string } = {};
+  const validateForm = (isSignUp: boolean = false) => {
+    const newErrors: { email?: string; password?: string; fullName?: string } = {};
     
     const emailResult = emailSchema.safeParse(email);
     if (!emailResult.success) {
-      newErrors.email = emailResult.error.errors[0].message;
+      newErrors.email = emailResult.error.errors[0]?.message || "Invalid email";
     }
 
     const passwordResult = passwordSchema.safeParse(password);
     if (!passwordResult.success) {
-      newErrors.password = passwordResult.error.errors[0].message;
+      newErrors.password = passwordResult.error.errors[0]?.message || "Invalid password";
+    }
+
+    if (isSignUp && fullName.trim()) {
+      const nameResult = nameSchema.safeParse(fullName);
+      if (!nameResult.success) {
+        newErrors.fullName = nameResult.error.errors[0]?.message || "Invalid name";
+      }
     }
 
     setErrors(newErrors);
@@ -48,10 +57,10 @@ export default function Auth() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateForm(false)) return;
 
     setIsSubmitting(true);
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(email.trim(), password);
     setIsSubmitting(false);
 
     if (error) {
@@ -68,10 +77,10 @@ export default function Auth() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateForm(true)) return;
 
     setIsSubmitting(true);
-    const { error } = await signUp(email, password, fullName);
+    const { error } = await signUp(email.trim(), password, fullName.trim() || undefined);
     setIsSubmitting(false);
 
     if (error) {
@@ -97,13 +106,19 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-glow">
-              <Zap className="w-6 h-6 text-primary-foreground" />
-            </div>
+        {/* Logo */}
+        <div className="text-center mb-8 animate-fade-in">
+          <div className="flex justify-center mb-4">
+            <img 
+              src={logoImage} 
+              alt="ApplyPilot" 
+              className="w-24 h-24 object-contain"
+            />
           </div>
-          <h1 className="text-3xl font-bold text-gradient mb-2">ApplyPilot</h1>
+          <h1 className="text-3xl font-bold mb-2">
+            <span className="text-foreground">Apply</span>
+            <span className="text-primary">Pilot</span>
+          </h1>
           <p className="text-muted-foreground">Your AI-powered job application autopilot</p>
         </div>
 
@@ -125,15 +140,23 @@ export default function Auth() {
                 <form onSubmit={handleSignIn} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="signin-email">Email</Label>
-                    <Input
-                      id="signin-email"
-                      type="email"
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className={errors.email ? "border-destructive" : ""}
-                      required
-                    />
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="signin-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (errors.email) setErrors({ ...errors, email: undefined });
+                        }}
+                        className={`pl-10 ${errors.email ? "border-destructive" : ""}`}
+                        maxLength={255}
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
                     {errors.email && (
                       <p className="text-sm text-destructive flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
@@ -143,15 +166,23 @@ export default function Auth() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="signin-password">Password</Label>
-                    <Input
-                      id="signin-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={errors.password ? "border-destructive" : ""}
-                      required
-                    />
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="signin-password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (errors.password) setErrors({ ...errors, password: undefined });
+                        }}
+                        className={`pl-10 ${errors.password ? "border-destructive" : ""}`}
+                        maxLength={100}
+                        autoComplete="current-password"
+                        required
+                      />
+                    </div>
                     {errors.password && (
                       <p className="text-sm text-destructive flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
@@ -170,7 +201,10 @@ export default function Auth() {
                         Signing in...
                       </>
                     ) : (
-                      "Sign In"
+                      <>
+                        Sign In
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </>
                     )}
                   </Button>
                 </form>
@@ -180,25 +214,48 @@ export default function Auth() {
                 <form onSubmit={handleSignUp} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="signup-name">Full Name</Label>
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder="John Doe"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                    />
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="Max Mustermann"
+                        value={fullName}
+                        onChange={(e) => {
+                          setFullName(e.target.value);
+                          if (errors.fullName) setErrors({ ...errors, fullName: undefined });
+                        }}
+                        className={`pl-10 ${errors.fullName ? "border-destructive" : ""}`}
+                        maxLength={100}
+                        autoComplete="name"
+                      />
+                    </div>
+                    {errors.fullName && (
+                      <p className="text-sm text-destructive flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {errors.fullName}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className={errors.email ? "border-destructive" : ""}
-                      required
-                    />
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (errors.email) setErrors({ ...errors, email: undefined });
+                        }}
+                        className={`pl-10 ${errors.email ? "border-destructive" : ""}`}
+                        maxLength={255}
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
                     {errors.email && (
                       <p className="text-sm text-destructive flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
@@ -208,15 +265,23 @@ export default function Auth() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="signup-password">Password</Label>
-                    <Input
-                      id="signup-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={errors.password ? "border-destructive" : ""}
-                      required
-                    />
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (errors.password) setErrors({ ...errors, password: undefined });
+                        }}
+                        className={`pl-10 ${errors.password ? "border-destructive" : ""}`}
+                        maxLength={100}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </div>
                     {errors.password && (
                       <p className="text-sm text-destructive flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
@@ -238,7 +303,10 @@ export default function Auth() {
                         Creating account...
                       </>
                     ) : (
-                      "Create Account"
+                      <>
+                        Create Account
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </>
                     )}
                   </Button>
                 </form>
@@ -247,7 +315,14 @@ export default function Auth() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
+        {/* Features */}
+        <div className="mt-8 text-center text-sm text-muted-foreground animate-fade-in">
+          <p className="mb-2">✨ AI-powered job matching</p>
+          <p className="mb-2">🚀 Automated applications</p>
+          <p>📊 Real-time analytics</p>
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground mt-6">
           By continuing, you agree to our Terms of Service and Privacy Policy.
         </p>
       </div>

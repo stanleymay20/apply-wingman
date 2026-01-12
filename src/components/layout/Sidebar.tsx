@@ -5,7 +5,6 @@ import {
   Settings, 
   Briefcase, 
   BarChart3,
-  Zap,
   ChevronLeft,
   ChevronRight,
   Bell,
@@ -24,6 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatDistanceToNow } from "date-fns";
+import logoImage from "@/assets/logo.png";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -81,18 +81,39 @@ export function Sidebar() {
 
   const status = statusConfig[automationStatus as keyof typeof statusConfig] || statusConfig.paused;
 
+  // Logo Component
+  const Logo = ({ showText = true }: { showText?: boolean }) => (
+    <div className="flex items-center gap-3">
+      <img 
+        src={logoImage} 
+        alt="ApplyPilot" 
+        className="w-10 h-10 object-contain"
+      />
+      {showText && (
+        <div className="animate-fade-in">
+          <h1 className="text-xl font-bold">
+            <span className="text-foreground">Apply</span>
+            <span className="text-primary">Pilot</span>
+          </h1>
+          <p className="text-xs text-muted-foreground">Job Automation</p>
+        </div>
+      )}
+    </div>
+  );
+
   // Mobile hamburger button
   if (isMobile) {
     return (
       <>
         {/* Mobile Header Bar */}
         <header className="fixed top-0 left-0 right-0 h-16 bg-sidebar border-b border-sidebar-border flex items-center justify-between px-4 z-50">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-glow">
-              <Zap className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold text-foreground">ApplyPilot</span>
-          </div>
+          <Link to="/" className="flex items-center gap-2">
+            <img src={logoImage} alt="ApplyPilot" className="w-8 h-8 object-contain" />
+            <span className="text-lg font-bold">
+              <span className="text-foreground">Apply</span>
+              <span className="text-primary">Pilot</span>
+            </span>
+          </Link>
           
           <div className="flex items-center gap-2">
             {/* Notifications */}
@@ -198,15 +219,9 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
-        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-glow">
-          <Zap className="w-6 h-6 text-primary-foreground" />
-        </div>
-        {!collapsed && (
-          <div className="animate-fade-in">
-            <h1 className="text-xl font-bold text-foreground">ApplyPilot</h1>
-            <p className="text-xs text-muted-foreground">Job Automation</p>
-          </div>
-        )}
+        <Link to="/">
+          <Logo showText={!collapsed} />
+        </Link>
       </div>
 
       {/* User Info */}
