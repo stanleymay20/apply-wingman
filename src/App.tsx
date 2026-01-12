@@ -6,6 +6,7 @@ import { Layout } from "@/components/layout/Layout";
 import { useRealtimeNotifications } from "@/hooks/useRealtimeNotifications";
 import Index from "./pages/Index";
 import Applications from "./pages/Applications";
+import Jobs from "./pages/Jobs";
 import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
@@ -30,6 +31,7 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/" element={<Layout><Index /></Layout>} />
               <Route path="/applications" element={<Layout><Applications /></Layout>} />
+              <Route path="/jobs" element={<Layout><Jobs /></Layout>} />
               <Route path="/profile" element={<Layout><Profile /></Layout>} />
               <Route path="/analytics" element={<Layout><Analytics /></Layout>} />
               <Route path="/settings" element={<Layout><Settings /></Layout>} />

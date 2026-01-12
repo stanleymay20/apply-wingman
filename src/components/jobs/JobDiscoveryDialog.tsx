@@ -70,8 +70,12 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
     setLocations(locations.filter((l) => l !== location));
   };
 
-  const handleDiscover = async () => {
-    if (keywords.length === 0) return;
+  const handleDiscover = () => {
+    if (keywords.length === 0) {
+      return;
+    }
+    
+    console.log("Starting discovery with:", { keywords, locations, platforms: selectedPlatforms });
     
     discoverJobs(
       {
@@ -81,7 +85,11 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
       },
       {
         onSuccess: () => {
+          console.log("Discovery completed successfully");
           onOpenChange(false);
+        },
+        onError: (error) => {
+          console.error("Discovery failed:", error);
         },
       }
     );

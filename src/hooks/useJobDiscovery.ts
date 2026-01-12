@@ -26,25 +26,31 @@ export function useJobDiscovery() {
   const queryClient = useQueryClient();
 
   const discoverJobsMutation = useMutation({
-    mutationFn: async (params: DiscoveryParams) => {
+    mutationFn: async (params: DiscoveryParams): Promise<DiscoveredJob[]> => {
       if (!user) throw new Error("Not authenticated");
 
       console.log("Calling discover-jobs with:", params);
-      const { data, error } = await supabase.functions.invoke("discover-jobs", {
-        body: params,
-      });
-
-      console.log("discover-jobs response:", { data, error });
       
-      if (error) {
-        console.error("Edge function error:", error);
-        throw error;
+      try {
+        const { data, error } = await supabase.functions.invoke("discover-jobs", {
+          body: params,
+        });
+
+        console.log("discover-jobs response:", { data, error });
+        
+        if (error) {
+          console.error("Edge function error:", error);
+          throw new Error(error.message || "Failed to discover jobs");
+        }
+        if (data?.error) {
+          console.error("Data error:", data.error);
+          throw new Error(data.error);
+        }
+        return (data?.jobs || []) as DiscoveredJob[];
+      } catch (err) {
+        console.error("Discovery fetch error:", err);
+        throw err;
       }
-      if (data?.error) {
-        console.error("Data error:", data.error);
-        throw new Error(data.error);
-      }
-      return data?.jobs as DiscoveredJob[];
     },
     onSuccess: async (jobs) => {
       console.log("Discovery success, jobs:", jobs?.length);

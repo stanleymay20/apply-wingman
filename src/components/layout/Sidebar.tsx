@@ -25,8 +25,11 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import logoImage from "@/assets/logo.png";
 
+import { Search } from "lucide-react";
+
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { path: "/jobs", icon: Search, label: "Jobs" },
   { path: "/applications", icon: Briefcase, label: "Applications" },
   { path: "/profile", icon: FileText, label: "My Profile" },
   { path: "/analytics", icon: BarChart3, label: "Analytics" },
