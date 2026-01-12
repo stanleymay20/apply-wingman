@@ -51,18 +51,18 @@ export default function Profile() {
     const result = await uploadFile(file, "cv-files");
     
     if (result) {
-      // Read file content for text files
-      if (file.type.includes("text")) {
-        const text = await file.text();
-        setCvText(text);
-      }
-      
       // Create or update CV profile with file info
+      let profileId = cvProfile?.id;
+      
       if (!cvProfile) {
-        createCVProfile({ 
-          cv_file_url: result.url, 
-          cv_file_name: result.fileName 
+        const newProfile = await new Promise<any>((resolve) => {
+          createCVProfile(
+            { cv_file_url: result.url, cv_file_name: result.fileName },
+            { onSuccess: resolve }
+          );
         });
+        profileId = newProfile?.id;
+        await refetch();
       } else {
         await supabase
           .from("cv_profiles")
@@ -71,11 +71,18 @@ export default function Profile() {
             cv_file_name: result.fileName 
           })
           .eq("id", cvProfile.id);
-        refetch();
+        await refetch();
       }
       
-      if (!file.type.includes("text")) {
-        toast.info("File uploaded! Please paste the text content below for AI parsing.");
+      // If text was extracted, auto-populate and optionally auto-parse
+      if (result.extractedText && result.extractedText.length >= 100) {
+        setCvText(result.extractedText);
+        toast.success("Text extracted from file! Click 'Parse CV with AI' to analyze.");
+      } else if (result.extractedText && result.extractedText.length < 100) {
+        setCvText(result.extractedText);
+        toast.warning("Extracted text is too short. Please paste additional content.");
+      } else {
+        toast.info("Could not extract text automatically. Please paste your CV text below.");
       }
     }
     
@@ -295,10 +302,10 @@ export default function Profile() {
                 <>
                   <Loader2 className="w-12 h-12 text-primary mx-auto mb-4 animate-spin" />
                   <p className="text-foreground font-medium mb-2">
-                    Uploading {uploadProgress?.fileName}...
+                    {uploadProgress?.status || "Uploading..."}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {uploadProgress?.progress}% complete
+                    {uploadProgress?.fileName} - {uploadProgress?.progress}%
                   </p>
                 </>
               ) : (
