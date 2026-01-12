@@ -2,10 +2,6 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
-import * as pdfjsLib from "pdfjs-dist";
-
-// Set worker source for PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface UploadProgress {
   progress: number;
@@ -20,52 +16,17 @@ interface UploadResult {
   extractedText?: string;
 }
 
-async function extractTextFromPDF(file: File): Promise<string> {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const textParts: string[] = [];
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      textParts.push(pageText);
-    }
-
-    return textParts.join("\n\n");
-  } catch (error) {
-    console.error("PDF extraction error:", error);
-    throw new Error("Failed to extract text from PDF");
-  }
-}
-
 async function extractTextFromFile(file: File): Promise<string | null> {
   const type = file.type;
   const name = file.name.toLowerCase();
 
-  // Plain text files
+  // Plain text files - can read directly
   if (type.includes("text") || name.endsWith(".txt")) {
     return await file.text();
   }
 
-  // PDF files
-  if (type === "application/pdf" || name.endsWith(".pdf")) {
-    return await extractTextFromPDF(file);
-  }
-
-  // DOC/DOCX - can't parse client-side, return null
-  if (
-    type === "application/msword" ||
-    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    name.endsWith(".doc") ||
-    name.endsWith(".docx")
-  ) {
-    return null;
-  }
-
+  // PDF and DOC files cannot be parsed client-side without heavy libraries
+  // Return null to indicate manual text paste is needed
   return null;
 }
 
