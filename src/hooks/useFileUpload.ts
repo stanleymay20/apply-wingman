@@ -2,16 +2,71 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set worker source for PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface UploadProgress {
   progress: number;
   fileName: string;
+  status: string;
 }
 
 interface UploadResult {
   url: string;
   path: string;
   fileName: string;
+  extractedText?: string;
+}
+
+async function extractTextFromPDF(file: File): Promise<string> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const textParts: string[] = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      textParts.push(pageText);
+    }
+
+    return textParts.join("\n\n");
+  } catch (error) {
+    console.error("PDF extraction error:", error);
+    throw new Error("Failed to extract text from PDF");
+  }
+}
+
+async function extractTextFromFile(file: File): Promise<string | null> {
+  const type = file.type;
+  const name = file.name.toLowerCase();
+
+  // Plain text files
+  if (type.includes("text") || name.endsWith(".txt")) {
+    return await file.text();
+  }
+
+  // PDF files
+  if (type === "application/pdf" || name.endsWith(".pdf")) {
+    return await extractTextFromPDF(file);
+  }
+
+  // DOC/DOCX - can't parse client-side, return null
+  if (
+    type === "application/msword" ||
+    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".doc") ||
+    name.endsWith(".docx")
+  ) {
+    return null;
+  }
+
+  return null;
 }
 
 export function useFileUpload() {
@@ -26,9 +81,10 @@ export function useFileUpload() {
         return null;
       }
 
-      // Validate file size (5MB max)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size must be less than 5MB");
+      // Validate file size (10MB max for PDFs)
+      const maxSize = file.type === "application/pdf" ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
+      if (file.size > maxSize) {
+        toast.error(`File size must be less than ${maxSize / (1024 * 1024)}MB`);
         return null;
       }
 
@@ -40,14 +96,20 @@ export function useFileUpload() {
           "application/msword",
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ];
-        if (!allowedTypes.includes(file.type)) {
+        const allowedExtensions = [".pdf", ".txt", ".doc", ".docx"];
+        const hasValidType = allowedTypes.includes(file.type);
+        const hasValidExtension = allowedExtensions.some(ext => 
+          file.name.toLowerCase().endsWith(ext)
+        );
+        
+        if (!hasValidType && !hasValidExtension) {
           toast.error("Please upload a PDF, DOC, DOCX, or TXT file");
           return null;
         }
       }
 
       setIsUploading(true);
-      setUploadProgress({ progress: 0, fileName: file.name });
+      setUploadProgress({ progress: 10, fileName: file.name, status: "Uploading..." });
 
       try {
         // Create unique file path: userId/timestamp-filename
@@ -56,6 +118,7 @@ export function useFileUpload() {
         const filePath = `${user.id}/${timestamp}-${sanitizedName}`;
 
         // Upload file
+        setUploadProgress({ progress: 30, fileName: file.name, status: "Uploading to storage..." });
         const { data, error } = await supabase.storage
           .from(bucket)
           .upload(filePath, file, {
@@ -65,12 +128,26 @@ export function useFileUpload() {
 
         if (error) throw error;
 
-        // Get signed URL for private buckets (cv-files, documents)
+        setUploadProgress({ progress: 50, fileName: file.name, status: "Processing file..." });
+
+        // Extract text from file
+        let extractedText: string | null = null;
+        try {
+          setUploadProgress({ progress: 60, fileName: file.name, status: "Extracting text..." });
+          extractedText = await extractTextFromFile(file);
+        } catch (extractError) {
+          console.warn("Text extraction failed:", extractError);
+          // Continue without extracted text
+        }
+
+        setUploadProgress({ progress: 80, fileName: file.name, status: "Generating URL..." });
+
+        // Get signed URL for private buckets
         const { data: signedData, error: signedError } = await supabase.storage
           .from(bucket)
           .createSignedUrl(data.path, 3600 * 24 * 7); // 7 days expiry
 
-        setUploadProgress({ progress: 100, fileName: file.name });
+        setUploadProgress({ progress: 100, fileName: file.name, status: "Complete!" });
 
         toast.success("File uploaded successfully");
 
@@ -78,6 +155,7 @@ export function useFileUpload() {
           url: signedError ? data.path : signedData.signedUrl,
           path: data.path,
           fileName: file.name,
+          extractedText: extractedText || undefined,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Upload failed";
@@ -85,7 +163,7 @@ export function useFileUpload() {
         return null;
       } finally {
         setIsUploading(false);
-        setUploadProgress(null);
+        setTimeout(() => setUploadProgress(null), 1000);
       }
     },
     [user]
