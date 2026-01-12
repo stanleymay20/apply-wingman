@@ -14,6 +14,7 @@ import {
   FileText,
   Inbox,
   CheckCircle2,
+  Rocket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ import { ExportButton } from "@/components/applications/ExportButton";
 import { ReferralEmailDialog } from "@/components/applications/ReferralEmailDialog";
 import { LogEmailDialog } from "@/components/applications/LogEmailDialog";
 import { ApplicationContractDialog } from "@/components/applications/ApplicationContractDialog";
+import { AutoApplyButton } from "@/components/jobs/AutoApplyButton";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
@@ -418,6 +420,22 @@ export default function Applications() {
                               </Button>
                             }
                           />
+
+                          {/* Auto Apply Button */}
+                          {app.status === "pending" && app.job && (
+                            <AutoApplyButton
+                              job={{
+                                id: app.job_id,
+                                title: app.job.title,
+                                company: app.job.company,
+                                source_url: app.job.source_url,
+                                source_platform: app.job.source_platform,
+                                application: { id: app.id, cover_letter: app.cover_letter || undefined },
+                              }}
+                              variant="ghost"
+                              size="sm"
+                            />
+                          )}
 
                           {/* External Link */}
                           {app.job?.source_url && (

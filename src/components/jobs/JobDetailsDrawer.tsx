@@ -5,6 +5,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import { JobDetailsPanel, type JobDetailsPanelJob } from "@/components/jobs/JobDetailsPanel";
+import { AutoApplyButton } from "@/components/jobs/AutoApplyButton";
+import { useApplications } from "@/hooks/useApplications";
 
 interface JobDetailsDrawerProps {
   job: JobDetailsPanelJob | null;
@@ -23,7 +25,12 @@ export function JobDetailsDrawer({
   isMatching,
   hasCV,
 }: JobDetailsDrawerProps) {
+  const { applications } = useApplications();
+  
   if (!job) return null;
+
+  // Find existing application for this job
+  const application = applications.find((app) => app.job_id === job.id);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -46,12 +53,22 @@ export function JobDetailsDrawer({
           >
             Close
           </Button>
-          <Button className="flex-1" asChild>
+          <Button variant="outline" asChild>
             <a href={job.source_url} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="w-4 h-4 mr-2" />
-              View Job
+              View
             </a>
           </Button>
+          <AutoApplyButton
+            job={{
+              id: job.id,
+              title: job.title,
+              company: job.company,
+              source_url: job.source_url,
+              source_platform: job.source_platform,
+              application: application ? { id: application.id, cover_letter: application.cover_letter || undefined } : null,
+            }}
+          />
         </div>
       </SheetContent>
     </Sheet>
