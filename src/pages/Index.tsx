@@ -5,15 +5,18 @@ import {
   TrendingUp,
   Calendar,
   Clock,
-  Loader2
+  Loader2,
+  Command,
 } from "lucide-react";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { QuotaProgress } from "@/components/dashboard/QuotaProgress";
 import { AutomationToggle } from "@/components/dashboard/AutomationToggle";
 import { RecentApplications } from "@/components/dashboard/RecentApplications";
 import { ApplicationFunnel } from "@/components/dashboard/ApplicationFunnel";
+import { SetupProgress } from "@/components/onboarding/SetupProgress";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
 import { useAuth } from "@/hooks/useAuth";
+import { Kbd } from "@/components/ui/kbd";
 
 export default function Dashboard() {
   const { profile } = useAuth();
@@ -39,10 +42,17 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-8 animate-fade-in">
-        <div className="flex items-center gap-2 text-muted-foreground mb-2">
-          <Calendar className="w-4 h-4" />
-          <span className="text-sm">{today}</span>
+      <div className="mb-6 animate-fade-in">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Calendar className="w-4 h-4" />
+            <span className="text-sm">{today}</span>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Quick actions:</span>
+            <Kbd>⌘</Kbd>
+            <Kbd>K</Kbd>
+          </div>
         </div>
         <h1 className="text-3xl font-bold text-foreground mb-2">
           Welcome back{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}
@@ -51,6 +61,9 @@ export default function Dashboard() {
           Monitor your job application automation in real-time
         </p>
       </div>
+
+      {/* Setup Progress (shows only when setup incomplete) */}
+      <SetupProgress />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

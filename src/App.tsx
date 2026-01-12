@@ -5,6 +5,9 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { Layout } from "@/components/layout/Layout";
 import { useRealtimeNotifications } from "@/hooks/useRealtimeNotifications";
 import { useSavedSearchAutomation } from "@/hooks/useSavedSearchAutomation";
+import { QuickActions, useQuickActions } from "@/components/common/QuickActions";
+import { KeyboardShortcuts, useKeyboardNavigation } from "@/components/common/KeyboardShortcuts";
+import { OnboardingWizard, useOnboarding } from "@/components/onboarding/OnboardingWizard";
 import Index from "./pages/Index";
 import Applications from "./pages/Applications";
 import Jobs from "./pages/Jobs";
@@ -17,19 +20,31 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-// Component to initialize realtime subscriptions
-function RealtimeProvider({ children }: { children: React.ReactNode }) {
+// Component to initialize realtime subscriptions and global features
+function GlobalProviders({ children }: { children: React.ReactNode }) {
   useRealtimeNotifications();
   useSavedSearchAutomation();
-  return <>{children}</>;
+  useKeyboardNavigation();
+  
+  const { open: quickActionsOpen, setOpen: setQuickActionsOpen } = useQuickActions();
+  const { showOnboarding, setShowOnboarding } = useOnboarding();
+
+  return (
+    <>
+      {children}
+      <QuickActions open={quickActionsOpen} onOpenChange={setQuickActionsOpen} />
+      <KeyboardShortcuts />
+      <OnboardingWizard open={showOnboarding} onOpenChange={setShowOnboarding} />
+    </>
+  );
 }
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <RealtimeProvider>
-        <TooltipProvider>
-          <BrowserRouter>
+      <TooltipProvider>
+        <BrowserRouter>
+          <GlobalProviders>
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/" element={<Layout><Index /></Layout>} />
@@ -41,9 +56,9 @@ const App = () => (
               <Route path="/settings" element={<Layout><Settings /></Layout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </RealtimeProvider>
+          </GlobalProviders>
+        </BrowserRouter>
+      </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
 );

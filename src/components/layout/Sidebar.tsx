@@ -9,7 +9,9 @@ import {
   ChevronRight,
   Bell,
   Menu,
-  X
+  X,
+  Command,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
@@ -17,6 +19,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Popover,
   PopoverContent,
@@ -24,8 +27,6 @@ import {
 } from "@/components/ui/popover";
 import { formatDistanceToNow } from "date-fns";
 import logoImage from "@/assets/logo.png";
-
-import { Search } from "lucide-react";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -259,6 +260,28 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Quick Actions Hint */}
+        {!collapsed && (
+          <button
+            onClick={() => {
+              const event = new KeyboardEvent("keydown", {
+                key: "k",
+                metaKey: true,
+                bubbles: true,
+              });
+              document.dispatchEvent(event);
+            }}
+            className="nav-link mt-4 border border-dashed border-border/50 hover:border-primary/50"
+          >
+            <Command className="w-4 h-4" />
+            <span className="flex-1">Quick Actions</span>
+            <div className="flex items-center gap-0.5">
+              <Kbd>⌘</Kbd>
+              <Kbd>K</Kbd>
+            </div>
+          </button>
+        )}
       </nav>
 
       {/* Notifications */}
