@@ -169,8 +169,19 @@ ${userName}`;
         emailSent: true,
       };
 
+      console.log("Email sent successfully:", emailData);
+
+      // Get user ID from auth header
+      const authHeader = req.headers.get("Authorization");
+      let userId: string | null = null;
+      if (authHeader) {
+        const token = authHeader.replace("Bearer ", "");
+        const { data: { user } } = await supabase.auth.getUser(token);
+        userId = user?.id || null;
+      }
+
       // Update application status
-      await supabase
+      const { error: updateError } = await supabase
         .from("applications")
         .update({
           status: "submitted",
@@ -179,16 +190,31 @@ ${userName}`;
         })
         .eq("id", applicationId);
 
+      if (updateError) {
+        console.error("Failed to update application:", updateError);
+      }
+
       // Log the action
-      await supabase.from("application_logs").insert({
-        user_id: (await supabase.auth.getUser()).data.user?.id,
-        application_id: applicationId,
-        job_id: jobId,
-        action: "auto_apply_email",
-        message: `Application email sent to ${recipientEmail}`,
-        level: "info",
-        details: { recipientEmail, emailId: emailData?.id },
-      });
+      if (userId) {
+        await supabase.from("application_logs").insert({
+          user_id: userId,
+          application_id: applicationId,
+          job_id: jobId,
+          action: "auto_apply_email",
+          message: `Application email sent to ${recipientEmail}`,
+          level: "info",
+          details: { recipientEmail, emailId: emailData?.id },
+        });
+
+        // Create notification for user
+        await supabase.from("notifications").insert({
+          user_id: userId,
+          type: "application_sent",
+          title: "Application Sent!",
+          message: `Your application for ${jobTitle} at ${company} was emailed to ${recipientEmail}`,
+          data: { applicationId, jobId, recipientEmail, emailId: emailData?.id },
+        });
+      }
     }
     // Method 2: ATS API Integration (Greenhouse, Lever)
     else if (method === "ats_api") {
