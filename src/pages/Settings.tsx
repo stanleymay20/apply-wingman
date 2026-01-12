@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { 
   Bell, 
   Shield, 
   Sliders,
   Mail,
   Globe,
-  Clock,
   AlertTriangle,
   Save,
   Loader2,
@@ -18,20 +17,15 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { profileSettingsSchema, domainSchema, nameSchema, safeValidate } from "@/lib/validation";
 
 export default function Settings() {
-  const { profile, refreshProfile, signOut } = useAuth();
+  const { profile, refreshProfile, signOut, loading } = useAuth();
   const queryClient = useQueryClient();
   
   const [isSaving, setIsSaving] = useState(false);
@@ -45,38 +39,67 @@ export default function Settings() {
     email: "",
   });
   const [newBlacklistDomain, setNewBlacklistDomain] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (profile) {
       setSettings({
-        daily_application_cap: profile.daily_application_cap,
-        minimum_fit_score: profile.minimum_fit_score,
-        notifications_enabled: profile.notifications_enabled,
-        email_notifications: profile.email_notifications,
-        manual_approval_mode: profile.manual_approval_mode,
+        daily_application_cap: profile.daily_application_cap ?? 50,
+        minimum_fit_score: profile.minimum_fit_score ?? 70,
+        notifications_enabled: profile.notifications_enabled ?? true,
+        email_notifications: profile.email_notifications ?? true,
+        manual_approval_mode: profile.manual_approval_mode ?? false,
         full_name: profile.full_name || "",
         email: profile.email,
       });
     }
   }, [profile]);
 
-  const { data: blacklist = [] } = useQuery({
+  const { data: blacklist = [], isLoading: blacklistLoading } = useQuery({
     queryKey: ["blacklist", profile?.id],
     queryFn: async () => {
       if (!profile) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("platform_blacklist")
         .select("*")
-        .eq("user_id", profile.id);
+        .eq("user_id", profile.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!profile,
   });
 
-  const saveSettings = async () => {
+  const saveSettings = useCallback(async () => {
     if (!profile) return;
     
+    // Validate settings
+    const validation = profileSettingsSchema.safeParse(settings);
+    if (!validation.success) {
+      const newErrors: Record<string, string> = {};
+      validation.error.errors.forEach((err) => {
+        const field = err.path[0] as string;
+        newErrors[field] = err.message;
+      });
+      setErrors(newErrors);
+      toast.error("Please fix the validation errors");
+      return;
+    }
+    
+    // Validate name separately if provided
+    if (settings.full_name) {
+      const nameValidation = nameSchema.safeParse(settings.full_name);
+      if (!nameValidation.success) {
+        const errorMsg = nameValidation.error.errors[0]?.message || "Invalid name";
+        setErrors({ full_name: errorMsg });
+        toast.error(errorMsg);
+        return;
+      }
+    }
+    
+    setErrors({});
     setIsSaving(true);
+    
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -85,7 +108,7 @@ export default function Settings() {
         notifications_enabled: settings.notifications_enabled,
         email_notifications: settings.email_notifications,
         manual_approval_mode: settings.manual_approval_mode,
-        full_name: settings.full_name,
+        full_name: settings.full_name || null,
       })
       .eq("id", profile.id);
 
@@ -97,20 +120,40 @@ export default function Settings() {
       await refreshProfile();
       toast.success("Settings saved successfully");
     }
-  };
+  }, [profile, settings, refreshProfile]);
 
   const addToBlacklist = useMutation({
     mutationFn: async (domain: string) => {
       if (!profile) throw new Error("Not authenticated");
+      
+      // Validate domain
+      const validation = domainSchema.safeParse(domain.toLowerCase().trim());
+      if (!validation.success) {
+        throw new Error(validation.error.errors[0]?.message || "Invalid domain");
+      }
+      
+      // Check for duplicates
+      const exists = blacklist.some(item => 
+        item.domain.toLowerCase() === validation.data.toLowerCase()
+      );
+      if (exists) {
+        throw new Error("Domain already in blacklist");
+      }
+      
       const { error } = await supabase
         .from("platform_blacklist")
-        .insert({ user_id: profile.id, domain });
+        .insert({ user_id: profile.id, domain: validation.data });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["blacklist"] });
       setNewBlacklistDomain("");
+      setErrors({});
       toast.success("Domain added to blacklist");
+    },
+    onError: (error: Error) => {
+      setErrors({ blacklist: error.message });
+      toast.error(error.message);
     },
   });
 
@@ -126,12 +169,19 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["blacklist"] });
       toast.success("Domain removed from blacklist");
     },
+    onError: () => {
+      toast.error("Failed to remove domain");
+    },
   });
 
   const handleSignOut = async () => {
     await signOut();
     toast.success("Signed out successfully");
   };
+
+  if (loading) {
+    return <LoadingSpinner fullPage text="Loading settings..." />;
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -160,9 +210,17 @@ export default function Settings() {
             <Label>Full Name</Label>
             <Input
               value={settings.full_name}
-              onChange={(e) => setSettings({ ...settings, full_name: e.target.value })}
-              className="bg-secondary border-border mt-1"
+              onChange={(e) => {
+                setSettings({ ...settings, full_name: e.target.value });
+                if (errors.full_name) setErrors({ ...errors, full_name: "" });
+              }}
+              className={`bg-secondary border-border mt-1 ${errors.full_name ? "border-destructive" : ""}`}
+              maxLength={100}
+              placeholder="Enter your full name"
             />
+            {errors.full_name && (
+              <p className="text-xs text-destructive mt-1">{errors.full_name}</p>
+            )}
           </div>
           <div>
             <Label>Email</Label>
@@ -194,7 +252,7 @@ export default function Settings() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <Label className="text-foreground">Daily Application Cap</Label>
-                <p className="text-sm text-muted-foreground">Maximum applications per day</p>
+                <p className="text-sm text-muted-foreground">Maximum applications per day (10-100)</p>
               </div>
               <span className="text-2xl font-bold text-primary">{settings.daily_application_cap}</span>
             </div>
@@ -218,7 +276,7 @@ export default function Settings() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <Label className="text-foreground">Minimum Match Score</Label>
-                <p className="text-sm text-muted-foreground">Only apply to jobs above this threshold</p>
+                <p className="text-sm text-muted-foreground">Only apply to jobs above this threshold (50-95%)</p>
               </div>
               <span className="text-2xl font-bold text-primary">{settings.minimum_fit_score}%</span>
             </div>
@@ -312,38 +370,59 @@ export default function Settings() {
               Companies or domains to never apply to
             </p>
             
-            <div className="flex gap-2 mb-3">
-              <Input 
-                placeholder="Add company or domain..."
-                value={newBlacklistDomain}
-                onChange={(e) => setNewBlacklistDomain(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && newBlacklistDomain && addToBlacklist.mutate(newBlacklistDomain)}
-                className="bg-secondary border-border"
-              />
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={() => newBlacklistDomain && addToBlacklist.mutate(newBlacklistDomain)}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="example.com"
+                  value={newBlacklistDomain}
+                  onChange={(e) => {
+                    setNewBlacklistDomain(e.target.value);
+                    if (errors.blacklist) setErrors({ ...errors, blacklist: "" });
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && newBlacklistDomain && addToBlacklist.mutate(newBlacklistDomain)}
+                  className={`bg-secondary border-border ${errors.blacklist ? "border-destructive" : ""}`}
+                  maxLength={255}
+                />
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => newBlacklistDomain && addToBlacklist.mutate(newBlacklistDomain)}
+                  disabled={addToBlacklist.isPending}
+                  aria-label="Add to blacklist"
+                >
+                  {addToBlacklist.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+              {errors.blacklist && (
+                <p className="text-xs text-destructive">{errors.blacklist}</p>
+              )}
             </div>
 
-            {blacklist.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+            {blacklistLoading ? (
+              <LoadingSpinner size="sm" className="mt-4" />
+            ) : blacklist.length > 0 ? (
+              <div className="flex flex-wrap gap-2 mt-4">
                 {blacklist.map((item) => (
                   <div 
                     key={item.id}
                     className="flex items-center gap-1 px-3 py-1 bg-destructive/10 text-destructive rounded-full text-sm"
                   >
                     {item.domain}
-                    <button onClick={() => removeFromBlacklist.mutate(item.id)}>
+                    <button 
+                      onClick={() => removeFromBlacklist.mutate(item.id)}
+                      disabled={removeFromBlacklist.isPending}
+                      aria-label={`Remove ${item.domain}`}
+                    >
                       <X className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/30">
@@ -387,7 +466,7 @@ export default function Settings() {
               className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border/50"
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{source.icon}</span>
+                <span className="text-2xl" role="img" aria-label={source.name}>{source.icon}</span>
                 <span className="font-medium text-foreground">{source.name}</span>
               </div>
               <div className={`flex items-center gap-2 ${source.supported ? "text-success" : "text-muted-foreground"}`}>

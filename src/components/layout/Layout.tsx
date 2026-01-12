@@ -4,7 +4,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { Sidebar } from "./Sidebar";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Loader2 } from "lucide-react";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 interface LayoutProps {
   children: ReactNode;
@@ -12,11 +15,12 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const { user, loading } = useAuth();
+  const isMobile = useIsMobile();
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <LoadingSpinner size="lg" text="Loading ApplyPilot..." />
       </div>
     );
   }
@@ -26,13 +30,20 @@ export function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="ml-64 p-8 transition-all duration-300">
-        {children}
-      </main>
-      <Toaster />
-      <Sonner />
-    </div>
+    <ErrorBoundary>
+      <div className="min-h-screen bg-background">
+        <Sidebar />
+        <main className={cn(
+          "p-4 sm:p-6 lg:p-8 transition-all duration-300",
+          isMobile ? "ml-0" : "ml-64"
+        )}>
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
+        </main>
+        <Toaster />
+        <Sonner />
+      </div>
+    </ErrorBoundary>
   );
 }

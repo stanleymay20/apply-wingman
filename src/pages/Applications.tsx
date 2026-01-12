@@ -8,11 +8,14 @@ import {
   Calendar,
   Percent,
   Loader2,
-  Plus
+  Plus,
+  Briefcase
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { EmptyState } from "@/components/common/EmptyState";
 import {
   Select,
   SelectContent,
@@ -32,6 +35,10 @@ import { Label } from "@/components/ui/label";
 import { useApplications } from "@/hooks/useApplications";
 import { useJobs } from "@/hooks/useJobs";
 import { toast } from "sonner";
+import { jobSchema, safeValidate } from "@/lib/validation";
+import { formatDistanceToNow } from "date-fns";
+
+type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
 export default function Applications() {
   const { applications, isLoading } = useApplications();
@@ -41,11 +48,12 @@ export default function Applications() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [isAddingJob, setIsAddingJob] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [newJob, setNewJob] = useState({
     title: "",
     company: "",
     source_url: "",
-    source_platform: "linkedin" as const,
+    source_platform: "linkedin" as SourcePlatform,
   });
 
   const filteredApplications = applications.filter((app) => {
@@ -59,45 +67,61 @@ export default function Applications() {
   });
 
   const handleAddJob = () => {
-    if (!newJob.title || !newJob.company || !newJob.source_url) {
-      toast.error("Please fill in all required fields");
+    // Clear previous errors
+    setFormErrors({});
+    
+    // Validate with Zod
+    const validation = jobSchema.safeParse(newJob);
+    
+    if (!validation.success) {
+      const errors: Record<string, string> = {};
+      validation.error.errors.forEach((err) => {
+        const field = err.path[0] as string;
+        errors[field] = err.message;
+      });
+      setFormErrors(errors);
+      toast.error("Please fix the form errors");
       return;
     }
     
-    createJob(newJob);
+    createJob(validation.data);
     setNewJob({ title: "", company: "", source_url: "", source_platform: "linkedin" });
+    setFormErrors({});
     setIsAddingJob(false);
   };
 
   const exportToCSV = () => {
+    if (filteredApplications.length === 0) {
+      toast.error("No applications to export");
+      return;
+    }
+    
     const headers = ["Role", "Company", "Location", "Platform", "Match Score", "Status", "Applied At"];
     const rows = filteredApplications.map(app => [
-      app.job?.title || "",
-      app.job?.company || "",
-      app.job?.location || "",
-      app.job?.source_platform || "",
+      (app.job?.title || "").replace(/,/g, ";"),
+      (app.job?.company || "").replace(/,/g, ";"),
+      (app.job?.location || "").replace(/,/g, ";"),
+      (app.job?.source_platform || "").replace(/,/g, ";"),
       app.match_score,
-      app.status,
+      app.status || "",
       app.applied_at || "",
     ]);
     
     const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `applications-${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success("Applications exported to CSV");
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingSpinner fullPage text="Loading applications..." />;
   }
 
   return (
@@ -120,6 +144,7 @@ export default function Applications() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-secondary border-border"
+              maxLength={100}
             />
           </div>
           
@@ -151,7 +176,13 @@ export default function Applications() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon" onClick={exportToCSV} title="Export CSV">
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={exportToCSV} 
+            title="Export CSV"
+            disabled={filteredApplications.length === 0}
+          >
             <Download className="w-4 h-4" />
           </Button>
 
@@ -176,7 +207,12 @@ export default function Applications() {
                     placeholder="Senior Data Engineer"
                     value={newJob.title}
                     onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
+                    maxLength={200}
+                    className={formErrors.title ? "border-destructive" : ""}
                   />
+                  {formErrors.title && (
+                    <p className="text-xs text-destructive mt-1">{formErrors.title}</p>
+                  )}
                 </div>
                 <div>
                   <Label>Company *</Label>
@@ -184,7 +220,12 @@ export default function Applications() {
                     placeholder="TechCorp GmbH"
                     value={newJob.company}
                     onChange={(e) => setNewJob({ ...newJob, company: e.target.value })}
+                    maxLength={200}
+                    className={formErrors.company ? "border-destructive" : ""}
                   />
+                  {formErrors.company && (
+                    <p className="text-xs text-destructive mt-1">{formErrors.company}</p>
+                  )}
                 </div>
                 <div>
                   <Label>Job URL *</Label>
@@ -192,13 +233,18 @@ export default function Applications() {
                     placeholder="https://..."
                     value={newJob.source_url}
                     onChange={(e) => setNewJob({ ...newJob, source_url: e.target.value })}
+                    maxLength={2000}
+                    className={formErrors.source_url ? "border-destructive" : ""}
                   />
+                  {formErrors.source_url && (
+                    <p className="text-xs text-destructive mt-1">{formErrors.source_url}</p>
+                  )}
                 </div>
                 <div>
                   <Label>Platform</Label>
                   <Select 
                     value={newJob.source_platform} 
-                    onValueChange={(v) => setNewJob({ ...newJob, source_platform: v as typeof newJob.source_platform })}
+                    onValueChange={(v) => setNewJob({ ...newJob, source_platform: v as SourcePlatform })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -214,7 +260,14 @@ export default function Applications() {
                   </Select>
                 </div>
                 <Button onClick={handleAddJob} className="w-full" disabled={jobsLoading}>
-                  Add Job
+                  {jobsLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    "Add Job"
+                  )}
                 </Button>
               </div>
             </DialogContent>
@@ -224,95 +277,112 @@ export default function Applications() {
 
       {/* Applications Table */}
       <div className="glass-card overflow-hidden animate-scale-in">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border/50 bg-secondary/50">
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Role / Company</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Location</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Platform</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Match</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
-                <th className="text-left p-4 text-sm font-medium text-muted-foreground">Applied</th>
-                <th className="text-right p-4 text-sm font-medium text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredApplications.map((app, index) => (
-                <tr 
-                  key={app.id} 
-                  className="table-row animate-slide-in border-b border-border/30 last:border-0"
-                  style={{ animationDelay: `${index * 30}ms` }}
-                >
-                  <td className="p-4">
-                    <div>
-                      <p className="font-medium text-foreground">{app.job?.title || 'Unknown'}</p>
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Building2 className="w-3 h-3" />
-                        {app.job?.company || 'Unknown'}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <MapPin className="w-3 h-3" />
-                      {app.job?.location || 'Remote'}
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <span className="text-sm text-foreground capitalize">
-                      {app.job?.source_platform?.replace('_', ' ') || 'Unknown'}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      <Percent className="w-3 h-3 text-primary" />
-                      <span className="font-medium text-primary">{app.match_score}%</span>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <StatusBadge status={app.status as "applied" | "interview" | "rejected" | "pending"} />
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      {app.applied_at 
-                        ? new Date(app.applied_at).toLocaleDateString()
-                        : 'Pending'}
-                    </div>
-                  </td>
-                  <td className="p-4 text-right">
-                    {app.job?.source_url && (
-                      <a href={app.job.source_url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="sm">
-                          <ExternalLink className="w-4 h-4" />
-                        </Button>
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {applications.length === 0 ? (
+          <EmptyState
+            icon={Briefcase}
+            title="No applications yet"
+            description="Add jobs manually or enable automation to start applying automatically"
+            action={{
+              label: "Add Your First Job",
+              onClick: () => setIsAddingJob(true),
+            }}
+          />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border/50 bg-secondary/50">
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Role / Company</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden md:table-cell">Location</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden sm:table-cell">Platform</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Match</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden lg:table-cell">Applied</th>
+                    <th className="text-right p-4 text-sm font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredApplications.map((app, index) => (
+                    <tr 
+                      key={app.id} 
+                      className="table-row animate-slide-in border-b border-border/30 last:border-0"
+                      style={{ animationDelay: `${index * 30}ms` }}
+                    >
+                      <td className="p-4">
+                        <div>
+                          <p className="font-medium text-foreground">{app.job?.title || 'Unknown'}</p>
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Building2 className="w-3 h-3" />
+                            {app.job?.company || 'Unknown'}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 hidden md:table-cell">
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <MapPin className="w-3 h-3" />
+                          {app.job?.location || 'Remote'}
+                        </div>
+                      </td>
+                      <td className="p-4 hidden sm:table-cell">
+                        <span className="text-sm text-foreground capitalize">
+                          {app.job?.source_platform?.replace('_', ' ') || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          <Percent className="w-3 h-3 text-primary" />
+                          <span className="font-medium text-primary">{app.match_score}%</span>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <StatusBadge status={app.status || "pending"} />
+                      </td>
+                      <td className="p-4 hidden lg:table-cell">
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          {app.applied_at 
+                            ? formatDistanceToNow(new Date(app.applied_at), { addSuffix: true })
+                            : 'Pending'}
+                        </div>
+                      </td>
+                      <td className="p-4 text-right">
+                        {app.job?.source_url && (
+                          <a 
+                            href={app.job.source_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            aria-label="View job posting"
+                          >
+                            <Button variant="ghost" size="sm">
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        {filteredApplications.length === 0 && (
-          <div className="p-12 text-center">
-            <p className="text-muted-foreground">
-              {applications.length === 0 
-                ? "No applications yet. Add jobs or start automation to begin."
-                : "No applications match your filters"}
-            </p>
-          </div>
+            {filteredApplications.length === 0 && applications.length > 0 && (
+              <div className="p-12 text-center">
+                <p className="text-muted-foreground">No applications match your filters</p>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Stats */}
-      <div className="flex items-center justify-between mt-6 animate-fade-in">
-        <p className="text-sm text-muted-foreground">
-          Showing {filteredApplications.length} of {applications.length} applications
-        </p>
-      </div>
+      {applications.length > 0 && (
+        <div className="flex items-center justify-between mt-6 animate-fade-in">
+          <p className="text-sm text-muted-foreground">
+            Showing {filteredApplications.length} of {applications.length} applications
+          </p>
+        </div>
+      )}
     </div>
   );
 }
