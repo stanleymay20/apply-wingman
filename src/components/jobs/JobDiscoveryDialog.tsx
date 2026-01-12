@@ -30,6 +30,7 @@ const PLATFORMS = [
   { id: "lever", label: "Lever", icon: "🎯" },
   { id: "workday", label: "Workday", icon: "📊" },
   { id: "smartrecruiters", label: "SmartRecruiters", icon: "💼" },
+  { id: "company_website", label: "Company Websites", icon: "🏢" },
 ];
 
 export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogProps) {

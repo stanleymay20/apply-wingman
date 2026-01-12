@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 type Status = 
@@ -70,20 +71,27 @@ const defaultConfig = {
   className: "bg-muted text-muted-foreground border border-border",
 };
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const normalizedStatus = status?.toLowerCase().replace(/\s+/g, "_") || "unknown";
-  const config = statusConfig[normalizedStatus] || {
-    ...defaultConfig,
-    label: status || "Unknown",
-  };
-  
-  return (
-    <span className={cn(
-      "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize",
-      config.className,
-      className
-    )}>
-      {config.label}
-    </span>
-  );
-}
+export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(
+  ({ status, className }, ref) => {
+    const normalizedStatus = status?.toLowerCase().replace(/\s+/g, "_") || "unknown";
+    const config = statusConfig[normalizedStatus] || {
+      ...defaultConfig,
+      label: status || "Unknown",
+    };
+    
+    return (
+      <span
+        ref={ref}
+        className={cn(
+          "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize",
+          config.className,
+          className
+        )}
+      >
+        {config.label}
+      </span>
+    );
+  }
+);
+
+StatusBadge.displayName = "StatusBadge";

@@ -41,6 +41,7 @@ import { useNavigate } from "react-router-dom";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
+import { CompanyTrackerDialog } from "@/components/jobs/CompanyTrackerDialog";
 import { JobDetailsDrawer } from "@/components/jobs/JobDetailsDrawer";
 import { JobDetailsPanel } from "@/components/jobs/JobDetailsPanel";
 import { SavedSearchesPanel } from "@/components/jobs/SavedSearchesPanel";
@@ -68,6 +69,7 @@ const PLATFORM_OPTIONS = [
   { value: "lever", label: "Lever" },
   { value: "workday", label: "Workday" },
   { value: "smartrecruiters", label: "SmartRecruiters" },
+  { value: "company_website", label: "Company Website" },
 ];
 
 export default function Jobs() {
@@ -82,6 +84,7 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [companyTrackerOpen, setCompanyTrackerOpen] = useState(false);
   const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
   const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<(typeof jobs)[0] | null>(null);
@@ -192,10 +195,14 @@ export default function Jobs() {
             Browse and manage discovered job opportunities
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => refetch()}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
+          </Button>
+          <Button variant="outline" onClick={() => setCompanyTrackerOpen(true)}>
+            <Building2 className="w-4 h-4 mr-2" />
+            Track Company
           </Button>
           <Button onClick={() => setDiscoveryOpen(true)}>
             <Sparkles className="w-4 h-4 mr-2" />
@@ -496,6 +503,11 @@ export default function Jobs() {
         onOpenChange={setBulkApplyOpen}
         jobs={matchedJobs}
         onComplete={refetch}
+      />
+
+      <CompanyTrackerDialog
+        open={companyTrackerOpen}
+        onOpenChange={setCompanyTrackerOpen}
       />
     </div>
   );
