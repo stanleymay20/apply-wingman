@@ -3,19 +3,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useCVProfile } from "./useCVProfile";
 import { toast } from "sonner";
-
-type ApplyMethod = "email" | "ats_api" | "assisted";
+import { 
+  detectApplicationMethod, 
+  shouldUseEmail,
+  type ApplicationMethodType 
+} from "@/lib/applicationMethods";
 
 interface AutoApplyParams {
   applicationId: string;
   jobId: string;
-  method: ApplyMethod;
+  method: ApplicationMethodType | "email" | "ats_api" | "assisted";
   recipientEmail?: string;
   jobTitle: string;
   company: string;
   sourceUrl: string;
   sourcePlatform: string;
   coverLetter?: string;
+  jobDescription?: string;
 }
 
 interface AutoApplyResult {
@@ -25,6 +29,8 @@ interface AutoApplyResult {
   applicationUrl?: string;
   emailSent?: boolean;
   apiSubmitted?: boolean;
+  deliveryStatus?: "sent" | "failed" | "pending";
+  confirmationExpected?: boolean;
 }
 
 export function useAutoApply() {
@@ -36,9 +42,18 @@ export function useAutoApply() {
     mutationFn: async (params: AutoApplyParams): Promise<AutoApplyResult> => {
       if (!user || !profile) throw new Error("Not authenticated");
 
+      // Normalize method for edge function compatibility
+      let normalizedMethod = params.method;
+      if (normalizedMethod.startsWith("ats_")) {
+        normalizedMethod = "ats_api";
+      } else if (normalizedMethod === "linkedin_easy_apply" || normalizedMethod === "company_form") {
+        normalizedMethod = "assisted";
+      }
+
       const { data, error } = await supabase.functions.invoke("auto-apply", {
         body: {
           ...params,
+          method: normalizedMethod,
           userName: profile.full_name || profile.email,
           userEmail: profile.email,
           cvFileUrl: cvProfile?.cv_file_url,
@@ -54,11 +69,19 @@ export function useAutoApply() {
       queryClient.invalidateQueries({ queryKey: ["applications"] });
 
       if (result.emailSent) {
-        toast.success(`Application sent to ${params.company}!`);
+        if (result.deliveryStatus === "sent") {
+          toast.success(`Application sent to ${params.company}!`, {
+            description: "Note: Email applications typically don't receive automated confirmations.",
+          });
+        }
       } else if (result.applicationUrl) {
         // Open the application URL
         window.open(result.applicationUrl, "_blank");
-        toast.success(result.message);
+        toast.success(result.message, {
+          description: result.confirmationExpected 
+            ? "You should receive a confirmation email from the company."
+            : "Complete your application on the opened page.",
+        });
       } else {
         toast.success(result.message);
       }
@@ -68,21 +91,43 @@ export function useAutoApply() {
     },
   });
 
-  // Detect best apply method for a job
-  const detectApplyMethod = (sourceUrl: string, sourcePlatform: string): ApplyMethod => {
-    const url = sourceUrl.toLowerCase();
+  /**
+   * Smart method detection - prioritizes ATS/forms over email
+   */
+  const detectBestMethod = (
+    sourceUrl: string, 
+    sourcePlatform: string,
+    jobDescription?: string
+  ) => {
+    return detectApplicationMethod(sourceUrl, sourcePlatform, jobDescription);
+  };
 
-    // Greenhouse and Lever have API-friendly apply flows
-    if (url.includes("greenhouse.io") || url.includes("lever.co")) {
+  /**
+   * Check if email should be used for this job
+   */
+  const checkEmailUsage = (
+    sourceUrl: string,
+    sourcePlatform: string,
+    jobDescription?: string
+  ) => {
+    return shouldUseEmail(sourceUrl, sourcePlatform, jobDescription);
+  };
+
+  /**
+   * Legacy method detection for backward compatibility
+   */
+  const detectApplyMethod = (
+    sourceUrl: string, 
+    sourcePlatform: string
+  ): "email" | "ats_api" | "assisted" => {
+    const method = detectApplicationMethod(sourceUrl, sourcePlatform);
+    
+    if (method.type.startsWith("ats_")) {
       return "ats_api";
     }
-
-    // LinkedIn, Indeed, Workday need assisted apply
-    if (url.includes("linkedin.com") || url.includes("indeed.com") || url.includes("workday")) {
-      return "assisted";
+    if (method.type === "email") {
+      return "email";
     }
-
-    // Default to assisted for unknown platforms
     return "assisted";
   };
 
@@ -95,11 +140,18 @@ export function useAutoApply() {
       company: string;
       source_url: string;
       source_platform: string;
+      description?: string;
       cover_letter?: string;
     }>,
-    method?: ApplyMethod
+    forceMethod?: "email" | "ats_api" | "assisted"
   ) => {
-    const results: Array<{ jobId: string; success: boolean; error?: string }> = [];
+    const results: Array<{ 
+      jobId: string; 
+      success: boolean; 
+      error?: string;
+      method?: string;
+      confirmationExpected?: boolean;
+    }> = [];
 
     for (const job of jobs) {
       try {
@@ -124,7 +176,20 @@ export function useAutoApply() {
           continue;
         }
 
-        const applyMethod = method || detectApplyMethod(job.source_url, job.source_platform);
+        // Detect best method for this job
+        const detectedMethod = detectApplicationMethod(
+          job.source_url, 
+          job.source_platform,
+          job.description
+        );
+        
+        // Use forced method or detected method
+        let applyMethod = forceMethod || detectApplyMethod(job.source_url, job.source_platform);
+        
+        // Warn if using email when ATS is available
+        if (applyMethod === "email" && !detectedMethod.requiresEmail) {
+          console.warn(`Using email for ${job.company} but ATS may be available: ${detectedMethod.label}`);
+        }
 
         await autoApplyMutation.mutateAsync({
           applicationId: appId,
@@ -135,9 +200,15 @@ export function useAutoApply() {
           sourceUrl: job.source_url,
           sourcePlatform: job.source_platform,
           coverLetter: job.cover_letter,
+          jobDescription: job.description,
         });
 
-        results.push({ jobId: job.id, success: true });
+        results.push({ 
+          jobId: job.id, 
+          success: true,
+          method: applyMethod,
+          confirmationExpected: detectedMethod.confirmationExpected,
+        });
 
         // Delay between applications to avoid rate limiting
         await new Promise((r) => setTimeout(r, 1000));
@@ -151,7 +222,14 @@ export function useAutoApply() {
     }
 
     const successCount = results.filter((r) => r.success).length;
-    toast.success(`Applied to ${successCount}/${jobs.length} jobs`);
+    const emailCount = results.filter((r) => r.method === "email").length;
+    const atsCount = results.filter((r) => r.method === "ats_api").length;
+    
+    let description = "";
+    if (atsCount > 0) description += `${atsCount} via ATS (confirmation expected). `;
+    if (emailCount > 0) description += `${emailCount} via email (no confirmation expected).`;
+    
+    toast.success(`Applied to ${successCount}/${jobs.length} jobs`, { description });
 
     return results;
   };
@@ -162,5 +240,7 @@ export function useAutoApply() {
     bulkAutoApply,
     isApplying: autoApplyMutation.isPending,
     detectApplyMethod,
+    detectBestMethod,
+    checkEmailUsage,
   };
 }
