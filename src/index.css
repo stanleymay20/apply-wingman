@@ -6,7 +6,7 @@
 
 @layer base {
   :root {
-    /* Navy Blue base - from logo */
+    /* Navy Blue base - from logo (Dark mode default) */
     --background: 214 35% 8%;
     --foreground: 210 40% 98%;
 
@@ -71,6 +71,71 @@
     --shadow-glow: 0 0 40px -10px hsl(28 95% 53% / 0.4);
   }
 
+  /* Light mode overrides */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* Keep orange primary */
+    --primary: 28 95% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    /* Keep sky blue accent */
+    --accent: 200 80% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 200 85% 45%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 28 95% 48%;
+
+    /* Light sidebar */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 222.2 47.4% 11.2%;
+    --sidebar-primary: 28 95% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 28 95% 48%;
+
+    /* Light mode gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(28 95% 48%) 0%, hsl(38 92% 55%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(200 80% 50%) 0%, hsl(214 35% 60%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 40% 98%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(28 95% 48% / 0.1) 0%, transparent 70%);
+    
+    /* Light shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.05);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -2px hsl(0 0% 0% / 0.05);
+    --shadow-glow: 0 0 40px -10px hsl(28 95% 48% / 0.2);
+  }
+
+  /* Keep dark class for backwards compatibility */
   .dark {
     --background: 214 35% 8%;
     --foreground: 210 40% 98%;

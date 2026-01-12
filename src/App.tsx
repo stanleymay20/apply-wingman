@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -20,11 +21,38 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Initialize theme mode on app start
+function useInitializeTheme() {
+  useEffect(() => {
+    const stored = localStorage.getItem("theme_mode");
+    const mode = stored && ["light", "dark", "system"].includes(stored) ? stored : "dark";
+    
+    const resolveMode = () => {
+      if (mode === "system") {
+        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      return mode;
+    };
+    
+    const effectiveMode = resolveMode();
+    const root = document.documentElement;
+    
+    if (effectiveMode === "light") {
+      root.classList.remove("dark");
+      root.classList.add("light");
+    } else {
+      root.classList.remove("light");
+      root.classList.add("dark");
+    }
+  }, []);
+}
+
 // Component to initialize realtime subscriptions and global features
 function GlobalProviders({ children }: { children: React.ReactNode }) {
   useRealtimeNotifications();
   useSavedSearchAutomation();
   useKeyboardNavigation();
+  useInitializeTheme();
   
   const { open: quickActionsOpen, setOpen: setQuickActionsOpen } = useQuickActions();
   const { showOnboarding, setShowOnboarding } = useOnboarding();
