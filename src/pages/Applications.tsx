@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmationBadge, DeliveryStatusBadge } from "@/components/common/ConfirmationBadge";
 import {
   Select,
   SelectContent,
@@ -306,7 +307,8 @@ export default function Applications() {
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden sm:table-cell">Platform</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Match</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden xl:table-cell">Email Status</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden xl:table-cell">Confirmation</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden 2xl:table-cell">Delivery</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden lg:table-cell">Applied</th>
                     <th className="text-right p-4 text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
@@ -348,22 +350,29 @@ export default function Applications() {
                         <StatusBadge status={app.status || "pending"} />
                       </td>
                       <td className="p-4 hidden xl:table-cell">
+                        {app.job?.source_url && app.job?.source_platform ? (
+                          <ConfirmationBadge
+                            sourceUrl={app.job.source_url}
+                            sourcePlatform={app.job.source_platform}
+                            jobDescription={app.job.description}
+                            applicationMethod={app.application_method}
+                            size="sm"
+                          />
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 hidden 2xl:table-cell">
                         {app.application_method === "email" ? (
-                          <div className="flex items-center gap-1.5">
-                            {app.status === "submitted" ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                                <span className="text-sm text-success font-medium">Sent</span>
-                              </>
-                            ) : app.status === "failed" ? (
-                              <>
-                                <AlertCircle className="w-3.5 h-3.5 text-destructive" />
-                                <span className="text-sm text-destructive font-medium">Failed</span>
-                              </>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">—</span>
-                            )}
-                          </div>
+                          <DeliveryStatusBadge
+                            status={
+                              app.status === "submitted" ? "sent" : 
+                              app.status === "failed" ? "failed" : 
+                              "pending"
+                            }
+                            errorMessage={app.error_message}
+                            size="sm"
+                          />
                         ) : (
                           <span className="text-sm text-muted-foreground">—</span>
                         )}
