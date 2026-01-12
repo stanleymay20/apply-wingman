@@ -10,7 +10,10 @@ import {
   Plus,
   Briefcase,
   Sparkles,
-  Mail
+  Mail,
+  FileText,
+  Inbox,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +35,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { useApplications } from "@/hooks/useApplications";
 import { useJobs } from "@/hooks/useJobs";
@@ -42,6 +50,8 @@ import { DocumentRequestDialog } from "@/components/applications/DocumentRequest
 import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
 import { ExportButton } from "@/components/applications/ExportButton";
 import { ReferralEmailDialog } from "@/components/applications/ReferralEmailDialog";
+import { LogEmailDialog } from "@/components/applications/LogEmailDialog";
+import { ApplicationContractDialog } from "@/components/applications/ApplicationContractDialog";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
@@ -62,6 +72,16 @@ export default function Applications() {
     uploaded: string[];
   }>({ open: false, applicationId: "", mode: "request", required: [], uploaded: [] });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [logEmailDialog, setLogEmailDialog] = useState<{
+    open: boolean;
+    applicationId: string;
+    companyName: string;
+  }>({ open: false, applicationId: "", companyName: "" });
+  const [contractDialog, setContractDialog] = useState<{
+    open: boolean;
+    job: { id: string; title: string; company: string; description: string | null; requirements: string[] | null };
+    applicationId: string;
+  } | null>(null);
   const [newJob, setNewJob] = useState({
     title: "",
     company: "",
@@ -333,6 +353,60 @@ export default function Applications() {
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {/* Application Contract */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setContractDialog({
+                                    open: true,
+                                    job: {
+                                      id: app.job_id,
+                                      title: app.job?.title || "Job",
+                                      company: app.job?.company || "Company",
+                                      description: app.job?.description || null,
+                                      requirements: app.job?.requirements || null,
+                                    },
+                                    applicationId: app.id,
+                                  })
+                                }
+                              >
+                                <FileText className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Application Contract</TooltipContent>
+                          </Tooltip>
+
+                          {/* Log Email Response */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setLogEmailDialog({
+                                    open: true,
+                                    applicationId: app.id,
+                                    companyName: app.job?.company || "Company",
+                                  })
+                                }
+                                className={app.company_email_received ? "text-success" : ""}
+                              >
+                                {app.company_email_received ? (
+                                  <CheckCircle2 className="w-4 h-4" />
+                                ) : (
+                                  <Inbox className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {app.company_email_received ? "Email received - log more" : "Log email response"}
+                            </TooltipContent>
+                          </Tooltip>
+
+                          {/* Referral Email */}
                           <ReferralEmailDialog
                             jobId={app.job_id}
                             applicationId={app.id}
@@ -344,6 +418,8 @@ export default function Applications() {
                               </Button>
                             }
                           />
+
+                          {/* External Link */}
                           {app.job?.source_url && (
                             <a 
                               href={app.job.source_url} 
@@ -395,6 +471,26 @@ export default function Applications() {
         mode={documentDialog.mode}
         onDocumentsUploaded={() => refetch()}
       />
+
+      {/* Log Email Dialog */}
+      <LogEmailDialog
+        open={logEmailDialog.open}
+        onOpenChange={(open) => setLogEmailDialog({ ...logEmailDialog, open })}
+        applicationId={logEmailDialog.applicationId}
+        companyName={logEmailDialog.companyName}
+      />
+
+      {/* Application Contract Dialog */}
+      {contractDialog && (
+        <ApplicationContractDialog
+          open={contractDialog.open}
+          onOpenChange={(open) => {
+            if (!open) setContractDialog(null);
+          }}
+          job={contractDialog.job}
+          applicationId={contractDialog.applicationId}
+        />
+      )}
     </div>
   );
 }
