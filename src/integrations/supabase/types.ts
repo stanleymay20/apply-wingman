@@ -14,6 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
+      application_emails: {
+        Row: {
+          application_id: string
+          created_at: string
+          email_type: string
+          from_email: string
+          id: string
+          is_automated: boolean | null
+          received_at: string
+          snippet: string | null
+          subject: string
+          user_id: string
+        }
+        Insert: {
+          application_id: string
+          created_at?: string
+          email_type?: string
+          from_email: string
+          id?: string
+          is_automated?: boolean | null
+          received_at?: string
+          snippet?: string | null
+          subject: string
+          user_id: string
+        }
+        Update: {
+          application_id?: string
+          created_at?: string
+          email_type?: string
+          from_email?: string
+          id?: string
+          is_automated?: boolean | null
+          received_at?: string
+          snippet?: string | null
+          subject?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_emails_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_emails_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       application_logs: {
         Row: {
           action: string
@@ -74,8 +128,13 @@ export type Database = {
       }
       applications: {
         Row: {
+          application_contract: Json | null
           application_method: string | null
           applied_at: string | null
+          company_email_received: boolean | null
+          company_email_received_at: string | null
+          company_email_snippet: string | null
+          company_email_subject: string | null
           cover_letter: string | null
           created_at: string | null
           custom_responses: Json | null
@@ -94,8 +153,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          application_contract?: Json | null
           application_method?: string | null
           applied_at?: string | null
+          company_email_received?: boolean | null
+          company_email_received_at?: string | null
+          company_email_snippet?: string | null
+          company_email_subject?: string | null
           cover_letter?: string | null
           created_at?: string | null
           custom_responses?: Json | null
@@ -114,8 +178,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          application_contract?: Json | null
           application_method?: string | null
           applied_at?: string | null
+          company_email_received?: boolean | null
+          company_email_received_at?: string | null
+          company_email_snippet?: string | null
+          company_email_subject?: string | null
           cover_letter?: string | null
           created_at?: string | null
           custom_responses?: Json | null
