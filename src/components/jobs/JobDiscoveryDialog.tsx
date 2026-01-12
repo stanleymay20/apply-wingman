@@ -38,33 +38,30 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   const { createSearch, isCreating } = useSavedSearches();
   
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "indeed"]);
-  const [keywords, setKeywords] = useState<string[]>(profile?.preferred_roles || []);
-  const [locations, setLocations] = useState<string[]>(profile?.preferred_locations || []);
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
   const [newKeyword, setNewKeyword] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [searchName, setSearchName] = useState("");
+  const [initialized, setInitialized] = useState(false);
 
-  // Keep dialog defaults in sync with profile once it loads.
-  // (useState initializers only run on first render, so profile-loaded values won't show otherwise)
+  // Reset and initialize when dialog opens
   useEffect(() => {
-    if (!open) return;
+    if (open && !initialized) {
+      const preferredRoles = (profile?.preferred_roles || []).filter(Boolean);
+      const preferredLocations = (profile?.preferred_locations || []).filter(Boolean);
 
-    const preferredRoles = (profile?.preferred_roles || []).filter(Boolean);
-    const preferredLocations = (profile?.preferred_locations || []).filter(Boolean);
-
-    setKeywords((prev) => {
-      if (prev.length > 0) return prev;
-      if (preferredRoles.length > 0) return preferredRoles;
-      // Sensible fallback so the CTA isn't "dead" on first use.
-      return ["Software Engineer"];
-    });
-
-    setLocations((prev) => {
-      if (prev.length > 0) return prev;
-      if (preferredLocations.length > 0) return preferredLocations;
-      return ["Remote"];
-    });
-  }, [open, profile]);
+      // Only set defaults from profile, NO hardcoded fallbacks
+      setKeywords(preferredRoles);
+      setLocations(preferredLocations.length > 0 ? preferredLocations : ["Remote"]);
+      setInitialized(true);
+    }
+    
+    // Reset initialized flag when dialog closes so next open will re-read profile
+    if (!open) {
+      setInitialized(false);
+    }
+  }, [open, profile, initialized]);
 
   const togglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
