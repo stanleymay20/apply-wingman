@@ -13,20 +13,23 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
+import { Progress } from "@/components/ui/progress";
 import {
   Loader2,
   Rocket,
   ExternalLink,
   ListChecks,
   Bookmark,
+  Mail,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useApplications } from "@/hooks/useApplications";
+import { useAutoApply } from "@/hooks/useAutoApply";
 import { useCVProfile } from "@/hooks/useCVProfile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type BulkApplyMode = "create_submissions" | "queue_links" | "shortlist";
+type BulkApplyMode = "auto_apply" | "queue_links" | "shortlist";
 
 interface Job {
   id: string;
@@ -34,6 +37,7 @@ interface Job {
   company: string;
   match_score?: number;
   source_url: string;
+  source_platform: string;
 }
 
 interface BulkApplyDialogProps {
@@ -50,21 +54,23 @@ export function BulkApplyDialog({
   onComplete,
 }: BulkApplyDialogProps) {
   const { profile } = useAuth();
-  const { createApplication } = useApplications();
+  const { bulkAutoApply, isApplying, detectApplyMethod } = useAutoApply();
   const { cvProfile } = useCVProfile();
 
   const defaultThreshold = profile?.minimum_fit_score || 70;
   const savedMode = (profile as any)?.bulk_apply_mode as BulkApplyMode | undefined;
 
   const [threshold, setThreshold] = useState(70);
-  const [mode, setMode] = useState<BulkApplyMode>("queue_links");
+  const [mode, setMode] = useState<BulkApplyMode>("auto_apply");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
 
-  // Sync dialog defaults whenever it opens (profile can load after first render)
+  // Sync dialog defaults whenever it opens
   useEffect(() => {
     if (!open) return;
     setThreshold(defaultThreshold);
-    setMode(savedMode || "queue_links");
+    setMode(savedMode || "auto_apply");
+    setProgress(0);
   }, [open, defaultThreshold, savedMode]);
 
   const eligibleJobs = useMemo(() => {
@@ -78,38 +84,39 @@ export function BulkApplyDialog({
     }
 
     setIsProcessing(true);
+    setProgress(0);
 
     try {
       if (mode === "shortlist") {
         toast.success(`Shortlisted ${eligibleJobs.length} jobs`);
       } else if (mode === "queue_links") {
-        // Create pending applications and open links
-        for (const job of eligibleJobs) {
-          createApplication({
-            job_id: job.id,
-            match_score: job.match_score || 0,
-            cv_profile_id: cvProfile?.id,
-          });
-        }
-        // Open first 5 links (browsers often block more)
+        // Open links and let user apply manually
         eligibleJobs.slice(0, 5).forEach((job) => {
           window.open(job.source_url, "_blank");
         });
         if (eligibleJobs.length > 5) {
-          toast.info(`Opened first 5 links. ${eligibleJobs.length - 5} more queued.`);
+          toast.info(`Opened first 5 links. ${eligibleJobs.length - 5} more available.`);
         } else {
           toast.success(`Opened ${eligibleJobs.length} job links`);
         }
       } else {
-        // create_submissions: mark as submitted
-        for (const job of eligibleJobs) {
-          createApplication({
-            job_id: job.id,
-            match_score: job.match_score || 0,
-            cv_profile_id: cvProfile?.id,
-          });
+        // auto_apply: Use the real auto-apply system
+        const jobsToApply = eligibleJobs.map((job) => ({
+          id: job.id,
+          title: job.title,
+          company: job.company,
+          source_url: job.source_url,
+          source_platform: job.source_platform,
+        }));
+
+        const results = await bulkAutoApply(jobsToApply);
+        const successCount = results.filter((r) => r.success).length;
+        
+        if (successCount === jobsToApply.length) {
+          toast.success(`Successfully applied to ${successCount} jobs!`);
+        } else {
+          toast.info(`Applied to ${successCount}/${jobsToApply.length} jobs`);
         }
-        toast.success(`Created ${eligibleJobs.length} applications`);
       }
 
       onComplete?.();
@@ -123,22 +130,22 @@ export function BulkApplyDialog({
 
   const modeOptions: { value: BulkApplyMode; label: string; icon: React.ReactNode; description: string }[] = [
     {
-      value: "queue_links",
-      label: "Queue + Open Links",
-      icon: <ExternalLink className="w-4 h-4" />,
-      description: "Create pending applications and open job links",
+      value: "auto_apply",
+      label: "Auto Apply",
+      icon: <Rocket className="w-4 h-4" />,
+      description: "Automatically apply using email or ATS APIs",
     },
     {
-      value: "create_submissions",
-      label: "Create Submissions",
-      icon: <ListChecks className="w-4 h-4" />,
-      description: "Create application records marked as submitted",
+      value: "queue_links",
+      label: "Open Links",
+      icon: <ExternalLink className="w-4 h-4" />,
+      description: "Open job pages for manual application",
     },
     {
       value: "shortlist",
       label: "Shortlist Only",
       icon: <Bookmark className="w-4 h-4" />,
-      description: "Just shortlist without creating applications",
+      description: "Just mark for later without applying",
     },
   ];
 
