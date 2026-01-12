@@ -462,6 +462,7 @@ export type Database = {
           phone: string | null
           preferred_locations: string[] | null
           preferred_roles: string[] | null
+          theme_preference: string | null
           updated_at: string | null
           visa_required: boolean | null
         }
@@ -480,6 +481,7 @@ export type Database = {
           phone?: string | null
           preferred_locations?: string[] | null
           preferred_roles?: string[] | null
+          theme_preference?: string | null
           updated_at?: string | null
           visa_required?: boolean | null
         }
@@ -498,6 +500,7 @@ export type Database = {
           phone?: string | null
           preferred_locations?: string[] | null
           preferred_roles?: string[] | null
+          theme_preference?: string | null
           updated_at?: string | null
           visa_required?: boolean | null
         }

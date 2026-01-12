@@ -52,6 +52,8 @@ export type SeniorityLevel =
   | "principal" 
   | "executive";
 
+export type ThemePreference = "navy" | "emerald" | "purple" | "sunset" | "midnight" | "ocean";
+
 export interface Profile {
   id: string;
   email: string;
@@ -67,6 +69,7 @@ export interface Profile {
   email_notifications: boolean;
   manual_approval_mode: boolean;
   automation_status: AutomationStatus;
+  theme_preference: ThemePreference;
   created_at: string;
   updated_at: string;
 }

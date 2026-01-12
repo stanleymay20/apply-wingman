@@ -9,7 +9,9 @@ import {
   Percent,
   Loader2,
   Plus,
-  Briefcase
+  Briefcase,
+  FileText,
+  Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,17 +39,27 @@ import { useJobs } from "@/hooks/useJobs";
 import { toast } from "sonner";
 import { jobSchema } from "@/lib/validation";
 import { formatDistanceToNow } from "date-fns";
+import { DocumentRequestDialog } from "@/components/applications/DocumentRequestDialog";
+import { JobDiscoveryDialog } from "@/components/jobs/JobDiscoveryDialog";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
 export default function Applications() {
-  const { applications, isLoading } = useApplications();
+  const { applications, isLoading, refetch } = useApplications();
   const { createJob, isLoading: jobsLoading } = useJobs();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [isAddingJob, setIsAddingJob] = useState(false);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [documentDialog, setDocumentDialog] = useState<{
+    open: boolean;
+    applicationId: string;
+    mode: "request" | "upload";
+    required: string[];
+    uploaded: string[];
+  }>({ open: false, applicationId: "", mode: "request", required: [], uploaded: [] });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [newJob, setNewJob] = useState({
     title: "",
@@ -189,6 +201,11 @@ export default function Applications() {
             disabled={filteredApplications.length === 0}
           >
             <Download className="w-4 h-4" />
+          </Button>
+
+          <Button variant="outline" onClick={() => setIsDiscovering(true)}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            Discover Jobs
           </Button>
 
           <Dialog open={isAddingJob} onOpenChange={setIsAddingJob}>
@@ -388,6 +405,20 @@ export default function Applications() {
           </p>
         </div>
       )}
+
+      {/* Job Discovery Dialog */}
+      <JobDiscoveryDialog open={isDiscovering} onOpenChange={setIsDiscovering} />
+
+      {/* Document Request Dialog */}
+      <DocumentRequestDialog
+        open={documentDialog.open}
+        onOpenChange={(open) => setDocumentDialog({ ...documentDialog, open })}
+        applicationId={documentDialog.applicationId}
+        requiredDocuments={documentDialog.required}
+        uploadedDocuments={documentDialog.uploaded}
+        mode={documentDialog.mode}
+        onDocumentsUploaded={() => refetch()}
+      />
     </div>
   );
 }
