@@ -11,10 +11,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Loader2, Plus, X, Sparkles } from "lucide-react";
+import { Search, Loader2, Plus, X, Sparkles, Bookmark } from "lucide-react";
 import { useJobDiscovery } from "@/hooks/useJobDiscovery";
+import { useSavedSearches } from "@/hooks/useSavedSearches";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface JobDiscoveryDialogProps {
   open: boolean;
@@ -33,12 +35,14 @@ const PLATFORMS = [
 export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogProps) {
   const { profile } = useAuth();
   const { discoverJobs, isDiscovering } = useJobDiscovery();
+  const { createSearch, isCreating } = useSavedSearches();
   
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "indeed"]);
   const [keywords, setKeywords] = useState<string[]>(profile?.preferred_roles || []);
   const [locations, setLocations] = useState<string[]>(profile?.preferred_locations || []);
   const [newKeyword, setNewKeyword] = useState("");
   const [newLocation, setNewLocation] = useState("");
+  const [searchName, setSearchName] = useState("");
 
   // Keep dialog defaults in sync with profile once it loads.
   // (useState initializers only run on first render, so profile-loaded values won't show otherwise)
@@ -107,6 +111,21 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
         },
       }
     );
+  };
+
+  const handleSaveSearch = () => {
+    if (keywords.length === 0) {
+      toast.error("Add at least one keyword to save");
+      return;
+    }
+    const name = searchName.trim() || keywords.slice(0, 2).join(", ");
+    createSearch({
+      name,
+      keywords,
+      locations,
+      platforms: selectedPlatforms,
+    });
+    setSearchName("");
   };
 
   return (
@@ -207,6 +226,27 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Save Search */}
+          <div className="space-y-3 pt-2 border-t border-border/50">
+            <Label>Save This Search (Optional)</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Search name (auto-generated if empty)"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                className="bg-secondary border-border"
+              />
+              <Button
+                variant="outline"
+                onClick={handleSaveSearch}
+                disabled={keywords.length === 0 || isCreating}
+              >
+                <Bookmark className="w-4 h-4 mr-2" />
+                Save
+              </Button>
             </div>
           </div>
         </div>
