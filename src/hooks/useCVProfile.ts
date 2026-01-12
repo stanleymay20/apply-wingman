@@ -42,9 +42,21 @@ export function useCVProfile() {
   });
 
   const parseCVMutation = useMutation({
-    mutationFn: async ({ cvText, cvProfileId }: { cvText: string; cvProfileId?: string }) => {
+    mutationFn: async ({
+      cvText,
+      cvFileUrl,
+      cvProfileId,
+    }: {
+      cvText?: string;
+      cvFileUrl?: string;
+      cvProfileId?: string;
+    }) => {
+      if (!cvText && !cvFileUrl) {
+        throw new Error("CV text or CV file URL is required");
+      }
+
       const { data, error } = await supabase.functions.invoke("parse-cv", {
-        body: { cvText, cvProfileId },
+        body: { cvText, cvFileUrl, cvProfileId },
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
