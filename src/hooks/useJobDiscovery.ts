@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 interface DiscoveryParams {
   keywords: string[];
@@ -41,14 +41,14 @@ export function useJobDiscovery() {
       if (!user) throw new Error("Not authenticated");
 
       console.log("Calling discover-jobs with:", params);
-      
+
       try {
         const { data, error } = await supabase.functions.invoke("discover-jobs", {
           body: params,
         });
 
         console.log("discover-jobs response:", { data, error });
-        
+
         if (error) {
           console.error("Edge function error:", error);
           throw new Error(error.message || "Failed to discover jobs");
@@ -65,7 +65,7 @@ export function useJobDiscovery() {
     },
     onSuccess: async (jobs, params) => {
       console.log("Discovery success, jobs:", jobs?.length);
-      
+
       if (!user) {
         setLastRun({
           timestamp: new Date().toISOString(),
@@ -78,7 +78,7 @@ export function useJobDiscovery() {
         toast.error("Not authenticated");
         return;
       }
-      
+
       if (!jobs || jobs.length === 0) {
         setLastRun({
           timestamp: new Date().toISOString(),
@@ -97,7 +97,7 @@ export function useJobDiscovery() {
         .from("jobs")
         .select("source_url")
         .eq("user_id", user.id);
-      
+
       const existingUrlSet = new Set(existingUrls.data?.map((j) => j.source_url) || []);
       const newJobs = jobs.filter((job) => !existingUrlSet.has(job.source_url));
 
@@ -153,7 +153,7 @@ export function useJobDiscovery() {
           error: null,
           status: "success",
         });
-        
+
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
         queryClient.invalidateQueries({ queryKey: ["applications"] });
         toast.success(`Found ${savedCount} new real jobs!`);
@@ -182,8 +182,17 @@ export function useJobDiscovery() {
     },
   });
 
+  // Promise-based wrapper for automation hook
+  const discoverJobsAsync = useCallback(
+    (params: DiscoveryParams) => {
+      return discoverJobsMutation.mutateAsync(params);
+    },
+    [discoverJobsMutation]
+  );
+
   return {
     discoverJobs: discoverJobsMutation.mutate,
+    discoverJobsAsync,
     isDiscovering: discoverJobsMutation.isPending,
     discoveredJobs: discoverJobsMutation.data,
     lastRun,
