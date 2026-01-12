@@ -11,13 +11,24 @@ import {
   Plus,
   X,
   User,
-  Palette
+  Palette,
+  Briefcase,
+  Clock,
+  Rocket,
+  PanelRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -39,6 +50,9 @@ export default function Settings() {
     manual_approval_mode: false,
     full_name: "",
     email: "",
+    saved_search_frequency: "manual",
+    bulk_apply_mode: "queue_links",
+    job_details_view: "drawer",
   });
   const [newBlacklistDomain, setNewBlacklistDomain] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -53,6 +67,9 @@ export default function Settings() {
         manual_approval_mode: profile.manual_approval_mode ?? false,
         full_name: profile.full_name || "",
         email: profile.email,
+        saved_search_frequency: profile.saved_search_frequency || "manual",
+        bulk_apply_mode: profile.bulk_apply_mode || "queue_links",
+        job_details_view: profile.job_details_view || "drawer",
       });
     }
   }, [profile]);
@@ -111,6 +128,9 @@ export default function Settings() {
         email_notifications: settings.email_notifications,
         manual_approval_mode: settings.manual_approval_mode,
         full_name: settings.full_name || null,
+        saved_search_frequency: settings.saved_search_frequency,
+        bulk_apply_mode: settings.bulk_apply_mode,
+        job_details_view: settings.job_details_view,
       })
       .eq("id", profile.id);
 
@@ -295,6 +315,93 @@ export default function Settings() {
               <span>70%</span>
               <span>95%</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Job Preferences */}
+      <div className="glass-card p-6 mb-6 animate-scale-in" style={{ animationDelay: "75ms" }}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-info/20">
+            <Briefcase className="w-5 h-5 text-info" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Job Preferences</h2>
+            <p className="text-sm text-muted-foreground">Configure job discovery and application behavior</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {/* Saved Search Frequency */}
+          <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border/50">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium text-foreground">Saved Search Frequency</p>
+                <p className="text-sm text-muted-foreground">How often to run saved searches automatically</p>
+              </div>
+            </div>
+            <Select
+              value={settings.saved_search_frequency}
+              onValueChange={(value) => setSettings({ ...settings, saved_search_frequency: value })}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="hourly">Hourly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Bulk Apply Mode */}
+          <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border/50">
+            <div className="flex items-center gap-3">
+              <Rocket className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium text-foreground">Bulk Apply Mode</p>
+                <p className="text-sm text-muted-foreground">What happens when you bulk apply to jobs</p>
+              </div>
+            </div>
+            <Select
+              value={settings.bulk_apply_mode}
+              onValueChange={(value) => setSettings({ ...settings, bulk_apply_mode: value })}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="create_submissions">Create Submissions</SelectItem>
+                <SelectItem value="queue_links">Queue + Open Links</SelectItem>
+                <SelectItem value="shortlist">Shortlist Only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Job Details View */}
+          <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border/50">
+            <div className="flex items-center gap-3">
+              <PanelRight className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium text-foreground">Job Details View</p>
+                <p className="text-sm text-muted-foreground">How job details are displayed</p>
+              </div>
+            </div>
+            <Select
+              value={settings.job_details_view}
+              onValueChange={(value) => setSettings({ ...settings, job_details_view: value })}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="drawer">Drawer</SelectItem>
+                <SelectItem value="page">Details Page</SelectItem>
+                <SelectItem value="inline">Inline Expand</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>

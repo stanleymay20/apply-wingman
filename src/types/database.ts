@@ -70,6 +70,9 @@ export interface Profile {
   manual_approval_mode: boolean;
   automation_status: AutomationStatus;
   theme_preference: ThemePreference;
+  saved_search_frequency: string;
+  bulk_apply_mode: string;
+  job_details_view: string;
   created_at: string;
   updated_at: string;
 }
