@@ -51,17 +51,22 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
       const preferredRoles = (profile?.preferred_roles || []).filter(Boolean);
       const preferredLocations = (profile?.preferred_locations || []).filter(Boolean);
 
-      // Only set defaults from profile, NO hardcoded fallbacks
-      setKeywords(preferredRoles);
-      setLocations(preferredLocations.length > 0 ? preferredLocations : ["Remote"]);
+      // Set defaults from profile - keep existing keywords if user already added some
+      if (keywords.length === 0) {
+        setKeywords(preferredRoles);
+      }
+      if (locations.length === 0) {
+        setLocations(preferredLocations.length > 0 ? preferredLocations : ["Remote"]);
+      }
       setInitialized(true);
     }
     
     // Reset initialized flag when dialog closes so next open will re-read profile
     if (!open) {
       setInitialized(false);
+      // Don't clear keywords/locations - keep them for next open
     }
-  }, [open, profile, initialized]);
+  }, [open, profile, initialized, keywords.length, locations.length]);
 
   const togglePlatform = (platformId: string) => {
     setSelectedPlatforms((prev) =>
@@ -95,6 +100,12 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
 
   const handleDiscover = () => {
     if (keywords.length === 0) {
+      toast.error("Add at least one keyword to search for jobs");
+      return;
+    }
+    
+    if (selectedPlatforms.length === 0) {
+      toast.error("Select at least one platform to search");
       return;
     }
     
@@ -103,7 +114,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
     discoverJobs(
       {
         keywords,
-        locations,
+        locations: locations.length > 0 ? locations : ["Remote"],
         platforms: selectedPlatforms,
       },
       {
@@ -113,6 +124,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
         },
         onError: (error) => {
           console.error("Discovery failed:", error);
+          toast.error(`Discovery failed: ${error.message}`);
         },
       }
     );
