@@ -80,10 +80,18 @@ CRITICAL INSTRUCTIONS:
 4. Extract ALL education entries
 5. Extract ALL certifications mentioned
 6. Include bullet points and achievements for each work experience
+7. After parsing, calculate a confidence score (0-100) reflecting parsing quality
 
 Return a JSON object with the following structure:
 
 {
+  "confidence_score": number (0-100, reflecting parsing quality and completeness),
+  "confidence_details": {
+    "sections_found": ["summary", "work_history", "skills", "education", etc.],
+    "sections_missing": ["certifications", "projects", etc.],
+    "data_quality": "high|medium|low",
+    "notes": "Brief explanation of confidence score"
+  },
   "full_name": "string",
   "email": "string or null",
   "phone": "string or null", 
@@ -147,12 +155,20 @@ Return a JSON object with the following structure:
   "volunteer": ["string or null"]
 }
 
+CONFIDENCE SCORING GUIDELINES:
+- 90-100: All major sections present with detailed data, clear dates, metrics in achievements
+- 70-89: Most sections present, some minor gaps or ambiguous data
+- 50-69: Key sections present but missing details or some sections empty
+- 30-49: Incomplete parsing, major sections missing or unclear
+- 0-29: Failed to extract meaningful data
+
 IMPORTANT:
 - Extract ALL work history entries, even if there are 10+ jobs
 - Include quantifiable achievements (%, $, numbers) in highlights
 - Identify technologies/tools mentioned in each job's context
 - Calculate experience_years by summing work history durations
 - Be thorough - this data is used for job matching
+- This should work for ALL professions, not just tech roles
 
 Return ONLY valid JSON, no markdown code blocks.`;
 
