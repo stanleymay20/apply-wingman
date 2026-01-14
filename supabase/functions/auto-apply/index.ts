@@ -41,29 +41,128 @@ interface ApplyResult {
   emailId?: string;
 }
 
+// Input validation
+function validateApplyRequest(data: unknown): { valid: boolean; error?: string; data?: ApplyRequest } {
+  if (!data || typeof data !== "object") {
+    return { valid: false, error: "Invalid request body" };
+  }
+
+  const req = data as Record<string, unknown>;
+
+  // Required fields
+  const requiredFields = ["applicationId", "jobId", "method", "userName", "userEmail", "jobTitle", "company", "sourceUrl", "sourcePlatform"];
+  for (const field of requiredFields) {
+    if (!req[field] || typeof req[field] !== "string") {
+      return { valid: false, error: `Missing or invalid required field: ${field}` };
+    }
+  }
+
+  // Validate method
+  if (!["email", "ats_api", "assisted"].includes(req.method as string)) {
+    return { valid: false, error: "Invalid method. Must be 'email', 'ats_api', or 'assisted'" };
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(req.userEmail as string)) {
+    return { valid: false, error: "Invalid user email format" };
+  }
+
+  if (req.recipientEmail && !emailRegex.test(req.recipientEmail as string)) {
+    return { valid: false, error: "Invalid recipient email format" };
+  }
+
+  // Validate string lengths
+  if ((req.userName as string).length > 200) {
+    return { valid: false, error: "User name too long (max 200 chars)" };
+  }
+
+  if ((req.jobTitle as string).length > 500) {
+    return { valid: false, error: "Job title too long (max 500 chars)" };
+  }
+
+  if ((req.company as string).length > 500) {
+    return { valid: false, error: "Company name too long (max 500 chars)" };
+  }
+
+  if (req.coverLetter && (req.coverLetter as string).length > 10000) {
+    return { valid: false, error: "Cover letter too long (max 10000 chars)" };
+  }
+
+  return {
+    valid: true,
+    data: {
+      applicationId: req.applicationId as string,
+      jobId: req.jobId as string,
+      method: req.method as "email" | "ats_api" | "assisted",
+      recipientEmail: req.recipientEmail as string | undefined,
+      userName: req.userName as string,
+      userEmail: req.userEmail as string,
+      cvFileUrl: req.cvFileUrl as string | undefined,
+      coverLetter: req.coverLetter as string | undefined,
+      jobTitle: req.jobTitle as string,
+      company: req.company as string,
+      sourceUrl: req.sourceUrl as string,
+      sourcePlatform: req.sourcePlatform as string,
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  // Get user ID from auth header
+  // ===== AUTHENTICATION (MANDATORY) =====
   const authHeader = req.headers.get("Authorization");
-  let userId: string | null = null;
-  if (authHeader) {
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user } } = await supabase.auth.getUser(token);
-    userId = user?.id || null;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Unauthorized - missing auth token" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
+  const authSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data: claimsData, error: claimsError } = await authSupabase.auth.getClaims(token);
+
+  if (claimsError || !claimsData?.claims?.sub) {
+    console.error("JWT validation failed:", claimsError);
+    return new Response(
+      JSON.stringify({ success: false, error: "Unauthorized - invalid token" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  const userId = claimsData.claims.sub;
+  console.log(`Authenticated user for auto-apply: ${userId}`);
+  // ===== END AUTHENTICATION =====
+
+  // Use service role for database operations
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
   try {
-    const request: ApplyRequest = await req.json();
+    // Parse and validate input
+    const rawRequest = await req.json();
+    const validation = validateApplyRequest(rawRequest);
+
+    if (!validation.valid || !validation.data) {
+      return new Response(
+        JSON.stringify({ success: false, error: validation.error }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const request = validation.data;
     const {
       applicationId,
       jobId,
@@ -83,7 +182,7 @@ serve(async (req) => {
     console.log(`User: ${userName} (${userEmail}), Application ID: ${applicationId}`);
 
     // Check daily application cap
-    if (userId && method === "email") {
+    if (method === "email") {
       const today = new Date().toISOString().split("T")[0];
       const { data: todayApps } = await supabase
         .from("application_logs")
@@ -250,37 +349,35 @@ ${userName}`;
         }
 
         // Log successful delivery
-        if (userId) {
-          await supabase.from("application_logs").insert({
-            user_id: userId,
-            application_id: applicationId,
-            job_id: jobId,
-            action: "auto_apply_email",
-            message: `✅ Email delivered to ${recipientEmail}`,
-            level: "info",
-            details: { 
-              recipientEmail, 
-              emailId: emailData?.id,
-              deliveryStatus: "sent",
-              senderEmail: SENDER_EMAIL,
-            },
-          });
+        await supabase.from("application_logs").insert({
+          user_id: userId,
+          application_id: applicationId,
+          job_id: jobId,
+          action: "auto_apply_email",
+          message: `✅ Email delivered to ${recipientEmail}`,
+          level: "info",
+          details: { 
+            recipientEmail, 
+            emailId: emailData?.id,
+            deliveryStatus: "sent",
+            senderEmail: SENDER_EMAIL,
+          },
+        });
 
-          // Create success notification
-          await supabase.from("notifications").insert({
-            user_id: userId,
-            type: "application_sent",
-            title: "✅ Application Delivered!",
-            message: `Your application for ${jobTitle} at ${company} was emailed to ${recipientEmail}`,
-            data: { 
-              applicationId, 
-              jobId, 
-              recipientEmail, 
-              emailId: emailData?.id,
-              deliveryStatus: "sent",
-            },
-          });
-        }
+        // Create success notification
+        await supabase.from("notifications").insert({
+          user_id: userId,
+          type: "application_sent",
+          title: "✅ Application Delivered!",
+          message: `Your application for ${jobTitle} at ${company} was emailed to ${recipientEmail}`,
+          data: { 
+            applicationId, 
+            jobId, 
+            recipientEmail, 
+            emailId: emailData?.id,
+            deliveryStatus: "sent",
+          },
+        });
 
       } catch (sendError) {
         const errorMessage = sendError instanceof Error ? sendError.message : "Unknown email error";
@@ -412,29 +509,27 @@ ${userName}`;
 // Helper function to log errors
 async function logError(
   supabase: any,
-  userId: string | null,
+  userId: string,
   applicationId: string,
   jobId: string,
   errorMessage: string,
   errorType: string
 ) {
-  if (userId) {
-    await supabase.from("application_logs").insert({
-      user_id: userId,
-      application_id: applicationId,
-      job_id: jobId,
-      action: `auto_apply_error_${errorType}`,
-      message: `❌ ${errorMessage}`,
-      level: "error",
-      details: { errorType, errorMessage },
-    });
-  }
+  await supabase.from("application_logs").insert({
+    user_id: userId,
+    application_id: applicationId,
+    job_id: jobId,
+    action: `auto_apply_error_${errorType}`,
+    message: `❌ ${errorMessage}`,
+    level: "error",
+    details: { errorType, errorMessage },
+  });
 }
 
 // Helper function to log delivery failures with notification
 async function logDeliveryFailure(
   supabase: any,
-  userId: string | null,
+  userId: string,
   applicationId: string,
   jobId: string,
   recipientEmail: string,
@@ -451,59 +546,57 @@ async function logDeliveryFailure(
     })
     .eq("id", applicationId);
 
-  if (userId) {
-    // Log the failure
-    await supabase.from("application_logs").insert({
-      user_id: userId,
-      application_id: applicationId,
-      job_id: jobId,
-      action: "auto_apply_email_failed",
-      message: `❌ Email delivery failed to ${recipientEmail}: ${errorMessage}`,
-      level: "error",
-      details: { 
-        recipientEmail, 
-        errorMessage,
-        deliveryStatus: "failed",
-      },
-    });
+  // Log the failure
+  await supabase.from("application_logs").insert({
+    user_id: userId,
+    application_id: applicationId,
+    job_id: jobId,
+    action: "auto_apply_email_failed",
+    message: `❌ Email delivery failed to ${recipientEmail}: ${errorMessage}`,
+    level: "error",
+    details: { 
+      recipientEmail, 
+      errorMessage,
+      deliveryStatus: "failed",
+    },
+  });
 
-    // Create failure notification
-    await supabase.from("notifications").insert({
-      user_id: userId,
-      type: "application_failed",
-      title: "❌ Email Delivery Failed",
-      message: `Failed to send application for ${jobTitle} at ${company} to ${recipientEmail}. Error: ${errorMessage}`,
-      data: { 
-        applicationId, 
-        jobId, 
-        recipientEmail, 
-        errorMessage,
-        deliveryStatus: "failed",
-      },
-    });
+  // Create failure notification
+  await supabase.from("notifications").insert({
+    user_id: userId,
+    type: "application_failed",
+    title: "❌ Email Delivery Failed",
+    message: `Failed to send application for ${jobTitle} at ${company} to ${recipientEmail}. Error: ${errorMessage}`,
+    data: { 
+      applicationId, 
+      jobId, 
+      recipientEmail, 
+      errorMessage,
+      deliveryStatus: "failed",
+    },
+  });
 
-    // Increment error count in daily stats
-    const today = new Date().toISOString().split("T")[0];
-    const { data: existingStats } = await supabase
+  // Increment error count in daily stats
+  const today = new Date().toISOString().split("T")[0];
+  const { data: existingStats } = await supabase
+    .from("daily_stats")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("date", today)
+    .single();
+
+  if (existingStats) {
+    await supabase
       .from("daily_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("date", today)
-      .single();
-
-    if (existingStats) {
-      await supabase
-        .from("daily_stats")
-        .update({
-          applications_failed: (existingStats.applications_failed || 0) + 1,
-        })
-        .eq("id", existingStats.id);
-    } else {
-      await supabase.from("daily_stats").insert({
-        user_id: userId,
-        date: today,
-        applications_failed: 1,
-      });
-    }
+      .update({
+        applications_failed: (existingStats.applications_failed || 0) + 1,
+      })
+      .eq("id", existingStats.id);
+  } else {
+    await supabase.from("daily_stats").insert({
+      user_id: userId,
+      date: today,
+      applications_failed: 1,
+    });
   }
 }
