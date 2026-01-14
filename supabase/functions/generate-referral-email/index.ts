@@ -1,9 +1,37 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Input validation
+function validateInput(data: unknown): { valid: boolean; error?: string; data?: Record<string, unknown> } {
+  if (!data || typeof data !== "object") {
+    return { valid: false, error: "Invalid request body" };
+  }
+
+  const input = data as Record<string, unknown>;
+
+  // Required fields
+  const requiredFields = ["recipientName", "company", "jobTitle", "userName"];
+  for (const field of requiredFields) {
+    if (!input[field] || typeof input[field] !== "string") {
+      return { valid: false, error: `Missing required field: ${field}` };
+    }
+    if ((input[field] as string).length > 200) {
+      return { valid: false, error: `${field} too long (max 200 chars)` };
+    }
+  }
+
+  // Optional fields validation
+  if (input.userSummary && typeof input.userSummary === "string" && input.userSummary.length > 2000) {
+    return { valid: false, error: "User summary too long (max 2000 chars)" };
+  }
+
+  return { valid: true, data: input };
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -11,6 +39,47 @@ serve(async (req) => {
   }
 
   try {
+    // ===== AUTHENTICATION =====
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+
+    if (claimsError || !claimsData?.claims) {
+      console.error("JWT validation failed:", claimsError);
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`Authenticated user for referral email: ${userId}`);
+    // ===== END AUTHENTICATION =====
+
+    // Parse and validate input
+    const rawInput = await req.json();
+    const validation = validateInput(rawInput);
+
+    if (!validation.valid || !validation.data) {
+      return new Response(
+        JSON.stringify({ error: validation.error }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { 
       recipientName, 
       recipientTitle, 
@@ -20,19 +89,16 @@ serve(async (req) => {
       userSkills,
       userExperience,
       userSummary
-    } = await req.json();
-
-    if (!recipientName || !company || !jobTitle || !userName) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields: recipientName, company, jobTitle, userName" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    } = validation.data;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
+
+    const skillsStr = Array.isArray(userSkills) 
+      ? userSkills.filter((s): s is string => typeof s === "string").slice(0, 20).join(", ")
+      : "Not specified";
 
     const prompt = `Generate a professional referral request email for a job application.
 
@@ -42,7 +108,7 @@ Context:
 - Recipient Title: ${recipientTitle || "Employee"}
 - Company: ${company}
 - Job Title: ${jobTitle}
-- Sender Skills: ${userSkills?.join(", ") || "Not specified"}
+- Sender Skills: ${skillsStr}
 - Sender Experience: ${userExperience || "Not specified"} years
 - Sender Summary: ${userSummary || "Experienced professional"}
 

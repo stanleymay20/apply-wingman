@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,12 +25,82 @@ interface DiscoveredJob {
   job_type: string;
 }
 
+// Input validation
+function validateDiscoveryParams(params: unknown): { valid: boolean; error?: string; data?: DiscoveryParams } {
+  if (!params || typeof params !== "object") {
+    return { valid: false, error: "Invalid request body" };
+  }
+
+  const { keywords, locations, platforms } = params as Record<string, unknown>;
+
+  if (!Array.isArray(keywords) || keywords.length === 0) {
+    return { valid: false, error: "At least one keyword is required" };
+  }
+
+  if (keywords.length > 10) {
+    return { valid: false, error: "Maximum 10 keywords allowed" };
+  }
+
+  for (const kw of keywords) {
+    if (typeof kw !== "string" || kw.length > 100) {
+      return { valid: false, error: "Keywords must be strings under 100 characters" };
+    }
+  }
+
+  const validLocations = Array.isArray(locations) 
+    ? locations.filter((l): l is string => typeof l === "string" && l.length <= 100).slice(0, 10)
+    : [];
+
+  const validPlatforms = Array.isArray(platforms)
+    ? platforms.filter((p): p is string => typeof p === "string" && p.length <= 50).slice(0, 10)
+    : [];
+
+  return {
+    valid: true,
+    data: {
+      keywords: keywords.map(k => String(k).slice(0, 100)),
+      locations: validLocations,
+      platforms: validPlatforms,
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // ===== AUTHENTICATION =====
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+
+    if (claimsError || !claimsData?.claims) {
+      console.error("JWT validation failed:", claimsError);
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`Authenticated user: ${userId}`);
+    // ===== END AUTHENTICATION =====
+
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
@@ -41,16 +112,20 @@ serve(async (req) => {
       );
     }
 
-    const { keywords, locations, platforms }: DiscoveryParams = await req.json();
-
-    if (!keywords || keywords.length === 0) {
+    // Parse and validate input
+    const rawParams = await req.json();
+    const validation = validateDiscoveryParams(rawParams);
+    
+    if (!validation.valid || !validation.data) {
       return new Response(
-        JSON.stringify({ success: false, error: "At least one keyword is required" }),
+        JSON.stringify({ success: false, error: validation.error }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.info("Discovering real jobs with:", { keywords, locations, platforms });
+    const { keywords, locations, platforms } = validation.data;
+
+    console.info("Discovering real jobs with:", { keywords, locations, platforms, userId });
 
     const allJobs: DiscoveredJob[] = [];
     const seenUrls = new Set<string>();
@@ -262,7 +337,7 @@ Return only valid JSON array with objects having: title, company, requirements (
     }
 
     return new Response(
-      JSON.stringify({ success: true, jobs: allJobs }),
+      JSON.stringify({ success: true, jobs: allJobs, userId }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

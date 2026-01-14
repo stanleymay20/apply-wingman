@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,20 +32,126 @@ interface CVData {
   summary: string;
 }
 
+// Input validation
+function validateInput(data: unknown): { valid: boolean; error?: string; job?: JobData; cvProfile?: CVData } {
+  if (!data || typeof data !== "object") {
+    return { valid: false, error: "Invalid request body" };
+  }
+
+  const { job, cvProfile } = data as Record<string, unknown>;
+
+  if (!job || typeof job !== "object") {
+    return { valid: false, error: "Job data is required" };
+  }
+
+  if (!cvProfile || typeof cvProfile !== "object") {
+    return { valid: false, error: "CV profile is required" };
+  }
+
+  const jobData = job as Record<string, unknown>;
+  const cvData = cvProfile as Record<string, unknown>;
+
+  // Validate job fields
+  if (!jobData.title || typeof jobData.title !== "string") {
+    return { valid: false, error: "Job title is required" };
+  }
+  if (!jobData.company || typeof jobData.company !== "string") {
+    return { valid: false, error: "Company name is required" };
+  }
+
+  // Truncate long fields
+  const validatedJob: JobData = {
+    title: String(jobData.title).slice(0, 500),
+    company: String(jobData.company).slice(0, 500),
+    description: typeof jobData.description === "string" ? jobData.description.slice(0, 10000) : "",
+    requirements: Array.isArray(jobData.requirements) 
+      ? jobData.requirements.filter((r): r is string => typeof r === "string").slice(0, 20)
+      : [],
+  };
+
+  const validatedCv: CVData = {
+    skills: Array.isArray(cvData.skills) 
+      ? cvData.skills.filter((s): s is string => typeof s === "string").slice(0, 50)
+      : [],
+    experience_years: typeof cvData.experience_years === "number" ? cvData.experience_years : 0,
+    seniority_level: typeof cvData.seniority_level === "string" ? cvData.seniority_level.slice(0, 100) : "",
+    work_history: Array.isArray(cvData.work_history) 
+      ? cvData.work_history.slice(0, 10).map((w: unknown) => {
+          const work = w as Record<string, unknown>;
+          return {
+            title: String(work.title || "").slice(0, 200),
+            company: String(work.company || "").slice(0, 200),
+            duration: String(work.duration || "").slice(0, 100),
+            highlights: Array.isArray(work.highlights) 
+              ? work.highlights.filter((h): h is string => typeof h === "string").slice(0, 10)
+              : [],
+          };
+        })
+      : [],
+    education: Array.isArray(cvData.education)
+      ? cvData.education.slice(0, 5).map((e: unknown) => {
+          const edu = e as Record<string, unknown>;
+          return {
+            degree: String(edu.degree || "").slice(0, 200),
+            field: String(edu.field || "").slice(0, 200),
+            institution: String(edu.institution || "").slice(0, 200),
+          };
+        })
+      : [],
+    summary: typeof cvData.summary === "string" ? cvData.summary.slice(0, 2000) : "",
+  };
+
+  return { valid: true, job: validatedJob, cvProfile: validatedCv };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { job, cvProfile }: { job: JobData; cvProfile: CVData } = await req.json();
-
-    if (!job || !cvProfile) {
+    // ===== AUTHENTICATION =====
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
-        JSON.stringify({ success: false, error: "Job and CV profile required" }),
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+
+    if (claimsError || !claimsData?.claims) {
+      console.error("JWT validation failed:", claimsError);
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`Authenticated user for contract generation: ${userId}`);
+    // ===== END AUTHENTICATION =====
+
+    // Parse and validate input
+    const rawInput = await req.json();
+    const validation = validateInput(rawInput);
+
+    if (!validation.valid || !validation.job || !validation.cvProfile) {
+      return new Response(
+        JSON.stringify({ success: false, error: validation.error }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const { job, cvProfile } = validation;
 
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
     if (!lovableKey) {

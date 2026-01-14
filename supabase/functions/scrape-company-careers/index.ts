@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,12 +14,74 @@ interface CareerPageJob {
   department?: string;
 }
 
+// Input validation
+function validateInput(data: unknown): { valid: boolean; error?: string; companyUrl?: string; companyName?: string } {
+  if (!data || typeof data !== "object") {
+    return { valid: false, error: "Invalid request body" };
+  }
+
+  const { companyUrl, companyName } = data as Record<string, unknown>;
+
+  if (!companyUrl || typeof companyUrl !== "string") {
+    return { valid: false, error: "Company URL is required" };
+  }
+
+  if (companyUrl.length > 500) {
+    return { valid: false, error: "Company URL too long (max 500 chars)" };
+  }
+
+  // Basic URL validation
+  try {
+    let testUrl = companyUrl.trim();
+    if (!testUrl.startsWith("http://") && !testUrl.startsWith("https://")) {
+      testUrl = `https://${testUrl}`;
+    }
+    new URL(testUrl);
+  } catch {
+    return { valid: false, error: "Invalid URL format" };
+  }
+
+  const validCompanyName = typeof companyName === "string" ? companyName.slice(0, 200) : undefined;
+
+  return { valid: true, companyUrl: companyUrl.trim(), companyName: validCompanyName };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // ===== AUTHENTICATION =====
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+
+    if (claimsError || !claimsData?.claims) {
+      console.error("JWT validation failed:", claimsError);
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`Authenticated user for career scrape: ${userId}`);
+    // ===== END AUTHENTICATION =====
+
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
     const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
@@ -29,19 +92,23 @@ serve(async (req) => {
       );
     }
 
-    const { companyUrl, companyName } = await req.json();
+    // Parse and validate input
+    const rawInput = await req.json();
+    const validation = validateInput(rawInput);
 
-    if (!companyUrl) {
+    if (!validation.valid) {
       return new Response(
-        JSON.stringify({ success: false, error: "Company URL is required" }),
+        JSON.stringify({ success: false, error: validation.error }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    const { companyUrl, companyName } = validation;
+
     console.log("Scraping company careers:", companyUrl);
 
     // Format URL
-    let formattedUrl = companyUrl.trim();
+    let formattedUrl = companyUrl!;
     if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
       formattedUrl = `https://${formattedUrl}`;
     }
