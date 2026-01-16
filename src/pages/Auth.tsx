@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,12 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
+
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   useEffect(() => {
     if (user && !loading) {
@@ -95,10 +102,130 @@ export default function Auth() {
     }
   };
 
+  const isRecoveryFlow = typeof window !== "undefined" && window.location.hash.includes("type=recovery");
+
+  const handleSendResetEmail = async () => {
+    const parsed = emailSchema.safeParse(forgotEmail);
+    if (!parsed.success) {
+      toast.error(parsed.error.errors[0]?.message || "Please enter a valid email address");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: `${window.location.origin}/auth`,
+    });
+    setIsSubmitting(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Password reset email sent. Check your inbox.");
+    setShowForgotPassword(false);
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const pass = passwordSchema.safeParse(newPassword);
+    if (!pass.success) {
+      toast.error(pass.error.errors[0]?.message || "Invalid password");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setIsSubmitting(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    // Clear hash so we don't keep showing recovery UI
+    window.location.hash = "";
+
+    toast.success("Password updated. You can now continue.");
+    navigate("/");
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isRecoveryFlow) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <img src={logoImage} alt="ApplyPilot" className="w-24 h-24 object-contain" />
+            </div>
+            <h1 className="text-3xl font-bold mb-2">
+              <span className="text-foreground">Apply</span>
+              <span className="text-primary">Pilot</span>
+            </h1>
+            <p className="text-muted-foreground">Set a new password</p>
+          </div>
+
+          <Card className="glass-card border-primary/20">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl">Update Password</CardTitle>
+              <CardDescription>Choose a new password for your account.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New Password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    maxLength={100}
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-new-password">Confirm New Password</Label>
+                  <Input
+                    id="confirm-new-password"
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    maxLength={100}
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    "Update Password"
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -207,6 +334,59 @@ export default function Auth() {
                       </>
                     )}
                   </Button>
+
+                  <div className="text-center">
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="px-0 text-sm"
+                      onClick={() => {
+                        setForgotEmail(email.trim());
+                        setShowForgotPassword((v) => !v);
+                      }}
+                      disabled={isSubmitting}
+                    >
+                      Forgot password?
+                    </Button>
+                  </div>
+
+                  {showForgotPassword && (
+                    <div className="rounded-lg border border-border bg-background/40 p-3 space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        We'll email you a secure link to reset your password.
+                      </p>
+                      <div className="space-y-2">
+                        <Label htmlFor="forgot-email">Email</Label>
+                        <Input
+                          id="forgot-email"
+                          type="email"
+                          value={forgotEmail}
+                          onChange={(e) => setForgotEmail(e.target.value)}
+                          maxLength={255}
+                          autoComplete="email"
+                          required
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          className="flex-1"
+                          onClick={handleSendResetEmail}
+                          disabled={isSubmitting}
+                        >
+                          Send reset link
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowForgotPassword(false)}
+                          disabled={isSubmitting}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </form>
               </TabsContent>
 
