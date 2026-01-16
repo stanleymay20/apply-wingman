@@ -133,25 +133,47 @@ serve(async (req) => {
     // Build search queries for each platform
     const platformSites: Record<string, string> = {
       linkedin: "site:linkedin.com/jobs",
-      indeed: "site:indeed.com OR site:de.indeed.com",
+      indeed: "site:indeed.com OR site:de.indeed.com OR site:uk.indeed.com",
       greenhouse: "site:greenhouse.io",
       lever: "site:jobs.lever.co",
       workday: "site:myworkdayjobs.com",
       smartrecruiters: "site:jobs.smartrecruiters.com",
     };
 
-    // Build location string
-    const locationStr = locations.length > 0 ? locations.join(" OR ") : "Germany OR Remote";
+    // Build location string - only if provided, otherwise don't constrain
+    const locationStr = locations.length > 0 && !locations.every(l => l.toLowerCase() === "remote")
+      ? locations.map(l => `"${l}"`).join(" OR ")
+      : "";
 
-    // Search for each keyword
-    for (const keyword of keywords.slice(0, 3)) {
-      // Build platform filter
-      const platformFilter = platforms
+    // Search for each keyword - use exact phrase matching for precision
+    for (const keyword of keywords.slice(0, 5)) {
+      // Build platform filter - prioritize user-selected platforms
+      const selectedPlatformFilters = platforms
         .map((p) => platformSites[p])
-        .filter(Boolean)
-        .join(" OR ");
+        .filter(Boolean);
+      
+      const platformFilter = selectedPlatformFilters.length > 0
+        ? `(${selectedPlatformFilters.join(" OR ")})`
+        : "";
 
-      const searchQuery = `${keyword} jobs ${locationStr} ${platformFilter ? `(${platformFilter})` : ""}`;
+      // Build a more precise search query:
+      // - Use quotes around the main keyword for exact matching
+      // - Include "hiring" or "apply" to target actual job listings
+      // - Add location only if specified
+      const searchParts = [
+        `"${keyword}"`, // Exact match for the job role
+        "hiring OR apply OR careers", // Signal this is a job listing
+      ];
+      
+      if (locationStr) {
+        searchParts.push(`(${locationStr})`);
+      }
+      
+      if (platformFilter) {
+        searchParts.push(platformFilter);
+      }
+
+      const searchQuery = searchParts.join(" ");
       
       console.info("Searching:", searchQuery);
 
@@ -164,9 +186,9 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             query: searchQuery,
-            limit: 10,
+            limit: 15, // Get more results per keyword
             lang: "en",
-            tbs: "qdr:w", // Last week
+            tbs: "qdr:m", // Last month for more results
             scrapeOptions: {
               formats: ["markdown"],
             },
@@ -236,6 +258,23 @@ serve(async (req) => {
             jobTitle = keyword; // Fallback to search keyword
           }
 
+          // RELEVANCE CHECK: Skip jobs that don't contain the search keyword in title or description
+          const keywordLower = keyword.toLowerCase();
+          const titleLower = jobTitle.toLowerCase();
+          const descLower = description.toLowerCase();
+          
+          // Check if the keyword (or individual words from it) appear in title or description
+          const keywordWords = keywordLower.split(/\s+/).filter(w => w.length > 2);
+          const matchesKeyword = 
+            titleLower.includes(keywordLower) || 
+            descLower.includes(keywordLower) ||
+            keywordWords.some(word => titleLower.includes(word) || descLower.slice(0, 1000).includes(word));
+          
+          if (!matchesKeyword) {
+            console.info(`Skipping irrelevant result: "${jobTitle}" doesn't match keyword "${keyword}"`);
+            continue;
+          }
+
           // Detect if remote
           const isRemote = 
             title.toLowerCase().includes("remote") ||
@@ -254,7 +293,7 @@ serve(async (req) => {
             }
           }
           if (!jobLocation) {
-            jobLocation = isRemote ? "Remote" : locations[0] || "Germany";
+            jobLocation = isRemote ? "Remote" : (locations[0] || "");
           }
 
           // Detect job type
