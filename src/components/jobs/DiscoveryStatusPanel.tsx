@@ -66,7 +66,7 @@ export function DiscoveryStatusPanel({ lastRun, onDismiss }: DiscoveryStatusPane
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-3 gap-2 text-sm">
           <div className="bg-background/50 rounded p-2">
             <p className="text-muted-foreground text-xs">Jobs Found</p>
             <p className="font-semibold">{lastRun.jobsReturned}</p>
@@ -74,6 +74,10 @@ export function DiscoveryStatusPanel({ lastRun, onDismiss }: DiscoveryStatusPane
           <div className="bg-background/50 rounded p-2">
             <p className="text-muted-foreground text-xs">Jobs Saved</p>
             <p className="font-semibold">{lastRun.jobsSaved}</p>
+          </div>
+          <div className="bg-background/50 rounded p-2">
+            <p className="text-muted-foreground text-xs">Duplicates</p>
+            <p className="font-semibold">{lastRun.duplicatesSkipped || 0}</p>
           </div>
         </div>
 

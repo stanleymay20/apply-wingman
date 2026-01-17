@@ -40,7 +40,9 @@ export type NotificationType =
   | "offer" 
   | "error" 
   | "daily_summary" 
-  | "system";
+  | "system"
+  | "jobs_discovered"
+  | "high_match_job";
 
 export type LogLevel = "info" | "warning" | "error" | "success";
 

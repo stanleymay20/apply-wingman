@@ -29,12 +29,13 @@ export function useRealtimeNotifications() {
           // Show toast notification
           const toastType = notification.type === "error" ? "error" : 
                            notification.type === "interview" ? "success" :
-                           notification.type === "offer" ? "success" : "info";
+                           notification.type === "offer" ? "success" :
+                           notification.type === "high_match_job" ? "success" : "info";
           
           if (toastType === "error") {
             toast.error(notification.title, { description: notification.message });
           } else if (toastType === "success") {
-            toast.success(notification.title, { description: notification.message });
+            toast.success(notification.title, { description: notification.message, duration: 8000 });
           } else {
             toast.info(notification.title, { description: notification.message });
           }
@@ -87,9 +88,62 @@ export function useRealtimeNotifications() {
       )
       .subscribe();
 
+    // Subscribe to job updates for high match score alerts
+    const jobsChannel = supabase
+      .channel("jobs-match-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "jobs",
+          filter: `user_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          const oldScore = payload.old?.match_score;
+          const newScore = payload.new?.match_score;
+          const jobTitle = payload.new?.title;
+          const company = payload.new?.company;
+          const jobId = payload.new?.id;
+
+          // Alert for 80%+ match score when score is newly set or crosses threshold
+          if (newScore && newScore >= 80 && (!oldScore || oldScore < 80)) {
+            // Show immediate toast with high priority
+            toast.success(
+              `🎯 High Match: ${jobTitle}`,
+              {
+                description: `${company} - ${newScore}% match! This job is a great fit for your profile.`,
+                duration: 10000,
+                action: {
+                  label: "View Job",
+                  onClick: () => {
+                    window.location.href = `/jobs?highlight=${jobId}`;
+                  },
+                },
+              }
+            );
+
+            // Create persistent notification
+            await supabase.from("notifications").insert({
+              user_id: user.id,
+              type: "high_match_job",
+              title: `🎯 High Match Job Found!`,
+              message: `${jobTitle} at ${company} has a ${newScore}% match score`,
+              data: { jobId, matchScore: newScore, title: jobTitle, company },
+            });
+
+            // Refresh queries
+            queryClient.invalidateQueries({ queryKey: ["jobs"] });
+            queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(notificationsChannel);
       supabase.removeChannel(applicationsChannel);
+      supabase.removeChannel(jobsChannel);
     };
   }, [user, queryClient]);
 }
