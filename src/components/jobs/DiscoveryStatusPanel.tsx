@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle2, Clock, X, AlertTriangle, Zap } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, X, AlertTriangle, Zap, Loader2, Target } from "lucide-react";
 import { DiscoveryRunStatus } from "@/hooks/useJobDiscovery";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -9,9 +9,10 @@ import { cn } from "@/lib/utils";
 interface DiscoveryStatusPanelProps {
   lastRun: DiscoveryRunStatus | null;
   onDismiss: () => void;
+  isMatching?: boolean;
 }
 
-export function DiscoveryStatusPanel({ lastRun, onDismiss }: DiscoveryStatusPanelProps) {
+export function DiscoveryStatusPanel({ lastRun, onDismiss, isMatching }: DiscoveryStatusPanelProps) {
   if (!lastRun) return null;
 
   const statusConfig = {
@@ -64,6 +65,15 @@ export function DiscoveryStatusPanel({ lastRun, onDismiss }: DiscoveryStatusPane
             {formatDistanceToNow(new Date(lastRun.timestamp), { addSuffix: true })}
           </span>
         </div>
+
+        {/* Matching Status */}
+        {isMatching && (
+          <div className="flex items-center gap-2 text-sm text-primary animate-pulse">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <Target className="w-4 h-4" />
+            <span>Calculating match scores...</span>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2 text-sm">
