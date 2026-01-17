@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { useCVProfile } from "./useCVProfile";
 import { toast } from "sonner";
 import { useState, useCallback } from "react";
 
@@ -77,8 +78,82 @@ function generateExternalId(url: string, platform: string): string {
 
 export function useJobDiscovery() {
   const { user } = useAuth();
+  const { cvProfile } = useCVProfile();
   const queryClient = useQueryClient();
   const [lastRun, setLastRun] = useState<DiscoveryRunStatus | null>(null);
+  const [isMatching, setIsMatching] = useState(false);
+
+  // Trigger job matching for newly discovered jobs
+  const matchJobsInBackground = useCallback(async (jobIds: string[]) => {
+    if (!cvProfile?.id || jobIds.length === 0) return;
+    
+    setIsMatching(true);
+    const matchResults: { jobId: string; score: number; error?: string }[] = [];
+    
+    for (const jobId of jobIds) {
+      try {
+        const { data, error } = await supabase.functions.invoke("match-job", {
+          body: { jobId, cvProfileId: cvProfile.id },
+        });
+        
+        if (error) {
+          console.error(`Match error for job ${jobId}:`, error);
+          matchResults.push({ jobId, score: 0, error: error.message });
+        } else if (data?.success) {
+          matchResults.push({ jobId, score: data.data?.score || 0 });
+          
+          // Notify for high match scores (80%+)
+          if (data.data?.score >= 80) {
+            // Fetch job details for notification
+            const { data: jobData } = await supabase
+              .from("jobs")
+              .select("title, company")
+              .eq("id", jobId)
+              .single();
+            
+            if (jobData && user) {
+              toast.success(`🎯 High match: ${jobData.title} at ${jobData.company}`, {
+                description: `${data.data.score}% match! ${data.data.recommendation === 'strong_apply' ? 'Strongly recommended!' : ''}`,
+                action: {
+                  label: "View",
+                  onClick: () => window.location.href = `/jobs/${jobId}`,
+                },
+              });
+              
+              // Create persistent notification
+              await supabase.from("notifications").insert({
+                user_id: user.id,
+                type: "high_match_job",
+                title: "🎯 High Match Job Found!",
+                message: `${jobData.title} at ${jobData.company} - ${data.data.score}% match`,
+                data: { jobId, score: data.data.score, recommendation: data.data.recommendation },
+              });
+            }
+          }
+        }
+        
+        // Small delay between API calls to avoid rate limiting
+        await new Promise(r => setTimeout(r, 500));
+      } catch (err) {
+        console.error(`Match exception for job ${jobId}:`, err);
+        matchResults.push({ jobId, score: 0, error: String(err) });
+      }
+    }
+    
+    setIsMatching(false);
+    
+    const successCount = matchResults.filter(r => !r.error).length;
+    const highMatches = matchResults.filter(r => r.score >= 80).length;
+    
+    if (successCount > 0) {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      if (highMatches > 0) {
+        toast.success(`Matched ${successCount} jobs! ${highMatches} with 80%+ score`);
+      }
+    }
+    
+    return matchResults;
+  }, [cvProfile?.id, user, queryClient]);
 
   const discoverJobsMutation = useMutation({
     mutationFn: async (params: DiscoveryParams): Promise<DiscoveredJob[]> => {
@@ -234,6 +309,8 @@ export function useJobDiscovery() {
         toast.error(`Failed to save jobs: ${error.message}`);
       } else {
         const savedCount = insertedData?.length || newJobs.length;
+        const insertedJobIds = insertedData?.map(j => j.id) || [];
+        
         setLastRun({
           timestamp: new Date().toISOString(),
           params,
@@ -260,6 +337,12 @@ export function useJobDiscovery() {
           message: `Discovered ${savedCount} new job listings${duplicatesSkipped > 0 ? ` (${duplicatesSkipped} duplicates filtered)` : ""}`,
           data: { count: savedCount, duplicatesSkipped, platforms: params.platforms },
         });
+
+        // Trigger automatic job matching for newly discovered jobs
+        if (insertedJobIds.length > 0 && cvProfile?.id) {
+          toast.info("Calculating match scores for new jobs...");
+          matchJobsInBackground(insertedJobIds);
+        }
       }
     },
     onError: (error, params) => {
@@ -289,6 +372,8 @@ export function useJobDiscovery() {
     discoverJobs: discoverJobsMutation.mutate,
     discoverJobsAsync,
     isDiscovering: discoverJobsMutation.isPending,
+    isMatching,
+    matchJobsInBackground,
     discoveredJobs: discoverJobsMutation.data,
     lastRun,
     clearLastRun: () => setLastRun(null),

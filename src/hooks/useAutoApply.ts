@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useCVProfile } from "./useCVProfile";
+import { useCVOptimization } from "./useCVOptimization";
 import { toast } from "sonner";
 import { 
   detectApplicationMethod, 
@@ -36,6 +37,7 @@ interface AutoApplyResult {
 export function useAutoApply() {
   const { user, profile } = useAuth();
   const { cvProfile } = useCVProfile();
+  const { checkCVReadyForAutoApply, MIN_SCORE_FOR_AUTO_APPLY } = useCVOptimization();
   const queryClient = useQueryClient();
 
   const autoApplyMutation = useMutation({
@@ -131,7 +133,7 @@ export function useAutoApply() {
     return "assisted";
   };
 
-  // Bulk auto-apply to multiple jobs
+  // Bulk auto-apply to multiple jobs with CV optimization check
   const bulkAutoApply = async (
     jobs: Array<{
       id: string;
@@ -143,7 +145,8 @@ export function useAutoApply() {
       description?: string;
       cover_letter?: string;
     }>,
-    forceMethod?: "email" | "ats_api" | "assisted"
+    forceMethod?: "email" | "ats_api" | "assisted",
+    skipCVCheck?: boolean
   ) => {
     const results: Array<{ 
       jobId: string; 
@@ -152,6 +155,34 @@ export function useAutoApply() {
       method?: string;
       confirmationExpected?: boolean;
     }> = [];
+
+    // Check CV readiness before bulk apply (unless skipped)
+    if (!skipCVCheck && cvProfile?.id) {
+      const cvReadiness = await checkCVReadyForAutoApply(cvProfile.id);
+      
+      if (!cvReadiness.ready) {
+        toast.error(
+          `CV score is ${cvReadiness.score}%, needs ${MIN_SCORE_FOR_AUTO_APPLY}% for auto-apply`,
+          {
+            description: cvReadiness.suggestions[0] || "Optimize your CV before applying",
+            duration: 8000,
+            action: {
+              label: "View Suggestions",
+              onClick: () => window.location.href = "/profile",
+            },
+          }
+        );
+        
+        // Return early with all jobs marked as blocked
+        return jobs.map(job => ({
+          jobId: job.id,
+          success: false,
+          error: `CV score too low (${cvReadiness.score}% < ${MIN_SCORE_FOR_AUTO_APPLY}%)`,
+        }));
+      }
+      
+      toast.success(`CV score: ${cvReadiness.score}% ✓ Ready for auto-apply!`);
+    }
 
     for (const job of jobs) {
       try {
@@ -242,5 +273,7 @@ export function useAutoApply() {
     detectApplyMethod,
     detectBestMethod,
     checkEmailUsage,
+    checkCVReadyForAutoApply,
+    MIN_SCORE_FOR_AUTO_APPLY,
   };
 }
