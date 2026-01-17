@@ -20,6 +20,7 @@ interface DiscoveredJob {
   requirements: string[];
   is_remote: boolean;
   job_type: string;
+  external_id?: string;
 }
 
 export interface DiscoveryRunStatus {
@@ -27,8 +28,51 @@ export interface DiscoveryRunStatus {
   params: DiscoveryParams;
   jobsReturned: number;
   jobsSaved: number;
+  duplicatesSkipped: number;
   error: string | null;
   status: "success" | "partial" | "error";
+}
+
+// Normalize URL to detect duplicates across slight variations
+function normalizeJobUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Remove tracking params, session IDs, etc.
+    const cleanParams = ["utm_source", "utm_medium", "utm_campaign", "ref", "refId", "trk", "trackingId", "returnUrl"];
+    cleanParams.forEach(param => parsed.searchParams.delete(param));
+    // Lowercase and remove trailing slashes
+    return parsed.toString().toLowerCase().replace(/\/+$/, "");
+  } catch {
+    return url.toLowerCase().replace(/\/+$/, "");
+  }
+}
+
+// Generate a unique external ID from the URL
+function generateExternalId(url: string, platform: string): string {
+  const normalized = normalizeJobUrl(url);
+  // Extract job ID patterns from common platforms
+  const patterns: Record<string, RegExp> = {
+    linkedin: /\/view\/(\d+)/,
+    indeed: /jk=([a-f0-9]+)/i,
+    greenhouse: /\/jobs\/(\d+)/,
+    lever: /\/([a-f0-9-]{36})/,
+    workday: /\/job\/([^\/]+)/,
+  };
+  
+  const pattern = patterns[platform];
+  if (pattern) {
+    const match = normalized.match(pattern);
+    if (match) return `${platform}_${match[1]}`;
+  }
+  
+  // Fallback: hash the normalized URL
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return `${platform}_${Math.abs(hash).toString(36)}`;
 }
 
 export function useJobDiscovery() {
@@ -39,6 +83,11 @@ export function useJobDiscovery() {
   const discoverJobsMutation = useMutation({
     mutationFn: async (params: DiscoveryParams): Promise<DiscoveredJob[]> => {
       if (!user) throw new Error("Not authenticated");
+
+      // Validate params - no empty searches allowed
+      if (!params.keywords || params.keywords.length === 0) {
+        throw new Error("At least one keyword is required");
+      }
 
       console.log("Calling discover-jobs with:", params);
 
@@ -72,6 +121,7 @@ export function useJobDiscovery() {
           params,
           jobsReturned: jobs?.length || 0,
           jobsSaved: 0,
+          duplicatesSkipped: 0,
           error: "Not authenticated",
           status: "error",
         });
@@ -85,6 +135,7 @@ export function useJobDiscovery() {
           params,
           jobsReturned: 0,
           jobsSaved: 0,
+          duplicatesSkipped: 0,
           error: null,
           status: "success",
         });
@@ -92,14 +143,49 @@ export function useJobDiscovery() {
         return;
       }
 
-      // Filter out jobs that already exist (by source_url)
-      const existingUrls = await supabase
+      // Fetch ALL existing jobs for deduplication (source_url AND external_id)
+      const { data: existingJobs } = await supabase
         .from("jobs")
-        .select("source_url")
+        .select("source_url, external_id")
         .eq("user_id", user.id);
 
-      const existingUrlSet = new Set(existingUrls.data?.map((j) => j.source_url) || []);
-      const newJobs = jobs.filter((job) => !existingUrlSet.has(job.source_url));
+      // Build sets for fast lookup with normalized URLs
+      const existingUrlSet = new Set<string>();
+      const existingIdSet = new Set<string>();
+      
+      (existingJobs || []).forEach(job => {
+        if (job.source_url) {
+          existingUrlSet.add(normalizeJobUrl(job.source_url));
+        }
+        if (job.external_id) {
+          existingIdSet.add(job.external_id);
+        }
+      });
+
+      // Process jobs with deduplication
+      const newJobs: DiscoveredJob[] = [];
+      const seenInBatch = new Set<string>();
+      let duplicatesSkipped = 0;
+
+      for (const job of jobs) {
+        const normalizedUrl = normalizeJobUrl(job.source_url);
+        const externalId = generateExternalId(job.source_url, job.source_platform);
+
+        // Check for duplicates: normalized URL, external_id, or within this batch
+        if (
+          existingUrlSet.has(normalizedUrl) ||
+          existingIdSet.has(externalId) ||
+          seenInBatch.has(normalizedUrl) ||
+          seenInBatch.has(externalId)
+        ) {
+          duplicatesSkipped++;
+          continue;
+        }
+
+        seenInBatch.add(normalizedUrl);
+        seenInBatch.add(externalId);
+        newJobs.push({ ...job, external_id: externalId });
+      }
 
       if (newJobs.length === 0) {
         setLastRun({
@@ -107,10 +193,11 @@ export function useJobDiscovery() {
           params,
           jobsReturned: jobs.length,
           jobsSaved: 0,
+          duplicatesSkipped,
           error: "All jobs already exist in your list",
           status: "partial",
         });
-        toast.info("All discovered jobs already exist in your list");
+        toast.info(`Found ${jobs.length} jobs, but all ${duplicatesSkipped} were duplicates`);
         return;
       }
 
@@ -121,6 +208,7 @@ export function useJobDiscovery() {
         location: job.location || null,
         source_platform: job.source_platform,
         source_url: job.source_url,
+        external_id: job.external_id || null,
         description: job.description || null,
         requirements: job.requirements || [],
         is_remote: job.is_remote ?? false,
@@ -129,7 +217,7 @@ export function useJobDiscovery() {
         status: "discovered",
       }));
 
-      console.log("Inserting jobs:", jobsToInsert.length);
+      console.log("Inserting jobs:", jobsToInsert.length, "Duplicates skipped:", duplicatesSkipped);
       const { data: insertedData, error } = await supabase.from("jobs").insert(jobsToInsert).select();
 
       if (error) {
@@ -139,6 +227,7 @@ export function useJobDiscovery() {
           params,
           jobsReturned: jobs.length,
           jobsSaved: 0,
+          duplicatesSkipped,
           error: `Database error: ${error.code} - ${error.message}`,
           status: "error",
         });
@@ -150,21 +239,26 @@ export function useJobDiscovery() {
           params,
           jobsReturned: jobs.length,
           jobsSaved: savedCount,
+          duplicatesSkipped,
           error: null,
           status: "success",
         });
 
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
         queryClient.invalidateQueries({ queryKey: ["applications"] });
-        toast.success(`Found ${savedCount} new real jobs!`);
+        
+        const message = duplicatesSkipped > 0 
+          ? `Found ${savedCount} new jobs! (${duplicatesSkipped} duplicates skipped)`
+          : `Found ${savedCount} new jobs!`;
+        toast.success(message);
 
         // Create notification
         await supabase.from("notifications").insert({
           user_id: user.id,
           type: "jobs_discovered",
-          title: "Real Jobs Found",
-          message: `Discovered ${savedCount} real job listings from ${params.platforms.join(", ")}`,
-          data: { count: savedCount, platforms: params.platforms },
+          title: "Jobs Found",
+          message: `Discovered ${savedCount} new job listings${duplicatesSkipped > 0 ? ` (${duplicatesSkipped} duplicates filtered)` : ""}`,
+          data: { count: savedCount, duplicatesSkipped, platforms: params.platforms },
         });
       }
     },
@@ -175,6 +269,7 @@ export function useJobDiscovery() {
         params,
         jobsReturned: 0,
         jobsSaved: 0,
+        duplicatesSkipped: 0,
         error: error.message,
         status: "error",
       });
