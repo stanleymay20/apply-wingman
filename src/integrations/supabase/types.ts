@@ -226,6 +226,45 @@ export type Database = {
           },
         ]
       }
+      auto_apply_schedules: {
+        Row: {
+          created_at: string
+          days_of_week: number[] | null
+          enabled: boolean
+          frequency: string
+          id: string
+          last_run_at: string | null
+          time_of_day: string
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          days_of_week?: number[] | null
+          enabled?: boolean
+          frequency: string
+          id?: string
+          last_run_at?: string | null
+          time_of_day: string
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          days_of_week?: number[] | null
+          enabled?: boolean
+          frequency?: string
+          id?: string
+          last_run_at?: string | null
+          time_of_day?: string
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       cv_profiles: {
         Row: {
           ats_suggestions: Json | null
