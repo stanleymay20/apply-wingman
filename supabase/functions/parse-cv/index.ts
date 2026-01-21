@@ -18,20 +18,67 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
+    // JWT validation using getClaims
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized - Missing or invalid authorization header" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    // Create client with user's auth header for validation
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    // Validate JWT and get user claims
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabaseAuth.auth.getUser(token);
+    
+    if (claimsError || !claimsData?.user) {
+      console.error("JWT validation failed:", claimsError);
+      return new Response(JSON.stringify({ error: "Unauthorized - Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userId = claimsData.user.id;
+    console.log("Authenticated user:", userId);
+
+    // Use service role for database operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { cvText, cvFileUrl, cvProfileId } = await req.json();
     console.log("Received request:", { hasCvText: !!cvText, hasCvFileUrl: !!cvFileUrl, cvProfileId });
+
+    // If cvProfileId is provided, verify ownership
+    if (cvProfileId) {
+      const { data: profile, error: profileError } = await supabase
+        .from("cv_profiles")
+        .select("user_id")
+        .eq("id", cvProfileId)
+        .single();
+      
+      if (profileError || !profile) {
+        return new Response(JSON.stringify({ error: "CV profile not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      if (profile.user_id !== userId) {
+        return new Response(JSON.stringify({ error: "Unauthorized - You don't own this CV profile" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     let effectiveText: string | null = typeof cvText === "string" ? cvText : null;
     let pdfBase64: string | null = null;
