@@ -37,6 +37,7 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { profileSettingsSchema, domainSchema, nameSchema } from "@/lib/validation";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { ThemeModeSelector } from "@/components/settings/ThemeModeSelector";
+import { AutoApplyScheduleManager } from "@/components/settings/AutoApplyScheduleManager";
 
 export default function Settings() {
   const { profile, refreshProfile, signOut, loading } = useAuth();
@@ -609,6 +610,11 @@ export default function Settings() {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* Auto-Apply Schedule */}
+      <div className="mb-6 animate-scale-in" style={{ animationDelay: "175ms" }}>
+        <AutoApplyScheduleManager />
       </div>
 
       {/* Theme Mode Settings */}
