@@ -28,6 +28,7 @@ import { cvTextSchema, skillSchema, roleSchema, locationSchema } from "@/lib/val
 import { ResumeScoreCard } from "@/components/profile/ResumeScoreCard";
 import { CVProfileSelector } from "@/components/profile/CVProfileSelector";
 import { CVWorkHistoryDisplay } from "@/components/profile/CVWorkHistoryDisplay";
+import { CVAutoOptimizationPanel } from "@/components/profile/CVAutoOptimizationPanel";
 import { useQuery } from "@tanstack/react-query";
 
 export default function Profile() {
@@ -482,6 +483,22 @@ export default function Profile() {
             seniorityLevel={cvProfile.seniority_level || undefined}
             existingScore={(cvProfile as any).resume_score || null}
             existingSuggestions={(cvProfile as any).ats_suggestions || null}
+          />
+        </div>
+      )}
+
+      {/* CV Auto-Optimization Panel */}
+      {cvProfile?.last_parsed_at && (
+        <div className="mb-6">
+          <CVAutoOptimizationPanel
+            cvProfileId={cvProfile.id}
+            cvSummary={cvProfile.summary || ""}
+            cvSkills={cvProfile.skills || []}
+            experienceYears={cvProfile.experience_years || undefined}
+            seniorityLevel={cvProfile.seniority_level || undefined}
+            currentScore={(cvProfile as any).resume_score || null}
+            atsSuggestions={(cvProfile as any).ats_suggestions || null}
+            onOptimizationComplete={() => refetch()}
           />
         </div>
       )}
