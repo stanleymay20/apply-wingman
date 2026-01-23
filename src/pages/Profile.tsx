@@ -29,6 +29,7 @@ import { ResumeScoreCard } from "@/components/profile/ResumeScoreCard";
 import { CVProfileSelector } from "@/components/profile/CVProfileSelector";
 import { CVWorkHistoryDisplay } from "@/components/profile/CVWorkHistoryDisplay";
 import { CVAutoOptimizationPanel } from "@/components/profile/CVAutoOptimizationPanel";
+import { CVAuditTimeline } from "@/components/profile/CVAuditTimeline";
 import { useQuery } from "@tanstack/react-query";
 
 export default function Profile() {
@@ -679,6 +680,13 @@ export default function Profile() {
                 </Badge>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* CV Activity Timeline */}
+        {cvProfile?.id && (
+          <div className="animate-scale-in" style={{ animationDelay: "300ms" }}>
+            <CVAuditTimeline cvProfileId={cvProfile.id} />
           </div>
         )}
       </div>

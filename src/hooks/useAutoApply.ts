@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useCVProfile } from "./useCVProfile";
 import { useCVOptimization } from "./useCVOptimization";
+import { useCVAutoOptimization } from "./useCVAutoOptimization";
 import { toast } from "sonner";
 import { 
   detectApplicationMethod, 
@@ -38,6 +39,7 @@ export function useAutoApply() {
   const { user, profile } = useAuth();
   const { cvProfile } = useCVProfile();
   const { checkCVReadyForAutoApply, MIN_SCORE_FOR_AUTO_APPLY } = useCVOptimization();
+  const { runAutoOptimization, isRunning: isOptimizing, TARGET_SCORE } = useCVAutoOptimization();
   const queryClient = useQueryClient();
 
   const autoApplyMutation = useMutation({
@@ -161,27 +163,72 @@ export function useAutoApply() {
       const cvReadiness = await checkCVReadyForAutoApply(cvProfile.id);
       
       if (!cvReadiness.ready) {
-        toast.error(
-          `CV score is ${cvReadiness.score}%, needs ${MIN_SCORE_FOR_AUTO_APPLY}% for auto-apply`,
-          {
-            description: cvReadiness.suggestions[0] || "Optimize your CV before applying",
-            duration: 8000,
-            action: {
-              label: "View Suggestions",
-              onClick: () => window.location.href = "/profile",
-            },
-          }
+        // Auto-optimize if score is below threshold
+        toast.info(
+          `CV score is ${cvReadiness.score}%, auto-optimizing to ${TARGET_SCORE}%...`,
+          { duration: 5000 }
         );
         
-        // Return early with all jobs marked as blocked
-        return jobs.map(job => ({
-          jobId: job.id,
-          success: false,
-          error: `CV score too low (${cvReadiness.score}% < ${MIN_SCORE_FOR_AUTO_APPLY}%)`,
-        }));
+        try {
+          const optimizationResult = await runAutoOptimization(
+            cvProfile.id,
+            {
+              summary: cvProfile.summary || "",
+              skills: cvProfile.skills || [],
+              experienceYears: cvProfile.experience_years || undefined,
+              seniorityLevel: cvProfile.seniority_level || undefined,
+            }
+          );
+          
+          if (optimizationResult && optimizationResult.finalScore >= MIN_SCORE_FOR_AUTO_APPLY) {
+            toast.success(
+              `CV optimized to ${optimizationResult.finalScore}%! Proceeding with applications.`,
+              { duration: 4000 }
+            );
+          } else {
+            toast.error(
+              `CV optimization completed but score (${optimizationResult?.finalScore || cvReadiness.score}%) is still below ${MIN_SCORE_FOR_AUTO_APPLY}%`,
+              {
+                description: "Please manually review your CV before applying",
+                duration: 8000,
+                action: {
+                  label: "View Profile",
+                  onClick: () => window.location.href = "/profile",
+                },
+              }
+            );
+            
+            // Return early with all jobs marked as blocked
+            return jobs.map(job => ({
+              jobId: job.id,
+              success: false,
+              error: `CV score too low after optimization`,
+            }));
+          }
+        } catch (optimizeError) {
+          console.error("Auto-optimization failed:", optimizeError);
+          toast.error(
+            `CV auto-optimization failed. Score: ${cvReadiness.score}%`,
+            {
+              description: cvReadiness.suggestions[0] || "Optimize your CV manually before applying",
+              duration: 8000,
+              action: {
+                label: "View Suggestions",
+                onClick: () => window.location.href = "/profile",
+              },
+            }
+          );
+          
+          // Return early with all jobs marked as blocked
+          return jobs.map(job => ({
+            jobId: job.id,
+            success: false,
+            error: `CV score too low (${cvReadiness.score}% < ${MIN_SCORE_FOR_AUTO_APPLY}%) and auto-optimization failed`,
+          }));
+        }
+      } else {
+        toast.success(`CV score: ${cvReadiness.score}% ✓ Ready for auto-apply!`);
       }
-      
-      toast.success(`CV score: ${cvReadiness.score}% ✓ Ready for auto-apply!`);
     }
 
     for (const job of jobs) {
