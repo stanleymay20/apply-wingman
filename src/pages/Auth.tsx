@@ -11,6 +11,7 @@ import { Loader2, AlertCircle, Mail, Lock, User, ArrowRight } from "lucide-react
 import { toast } from "sonner";
 import { z } from "zod";
 import logoImage from "@/assets/logo.png";
+import { AuthDiagnosticsPanel, type AuthError } from "@/components/auth/AuthDiagnosticsPanel";
 
 const emailSchema = z.string().trim().email("Please enter a valid email address").max(255);
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters").max(100);
@@ -25,6 +26,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
+  const [lastAuthError, setLastAuthError] = useState<AuthError | null>(null);
 
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -71,12 +73,21 @@ export default function Auth() {
     setIsSubmitting(false);
 
     if (error) {
+      const authError: AuthError = {
+        code: (error as any).code || "unknown",
+        status: (error as any).status,
+        message: error.message,
+        timestamp: new Date(),
+      };
+      setLastAuthError(authError);
+      
       if (error.message.includes("Invalid login credentials")) {
         toast.error("Invalid email or password. Please try again.");
       } else {
         toast.error(error.message);
       }
     } else {
+      setLastAuthError(null);
       toast.success("Welcome back!");
       navigate("/");
     }
@@ -91,12 +102,21 @@ export default function Auth() {
     setIsSubmitting(false);
 
     if (error) {
+      const authError: AuthError = {
+        code: (error as any).code || "unknown",
+        status: (error as any).status,
+        message: error.message,
+        timestamp: new Date(),
+      };
+      setLastAuthError(authError);
+      
       if (error.message.includes("already registered")) {
         toast.error("This email is already registered. Please sign in instead.");
       } else {
         toast.error(error.message);
       }
     } else {
+      setLastAuthError(null);
       toast.success("Account created successfully! Welcome to ApplyPilot.");
       navigate("/");
     }
@@ -386,6 +406,13 @@ export default function Auth() {
                         </Button>
                       </div>
                     </div>
+                  )}
+
+                  {lastAuthError && (
+                    <AuthDiagnosticsPanel 
+                      lastError={lastAuthError} 
+                      className="mt-4"
+                    />
                   )}
                 </form>
               </TabsContent>
