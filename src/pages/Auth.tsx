@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { z } from "zod";
 import logoImage from "@/assets/logo.png";
 import { AuthDiagnosticsPanel, type AuthError } from "@/components/auth/AuthDiagnosticsPanel";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
 
 const emailSchema = z.string().trim().email("Please enter a valid email address").max(255);
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters").max(100);
@@ -20,6 +22,9 @@ const nameSchema = z.string().trim().max(100);
 export default function Auth() {
   const navigate = useNavigate();
   const { user, signIn, signUp, loading } = useAuth();
+
+  const signInFormRef = useRef<HTMLFormElement | null>(null);
+  const signUpFormRef = useRef<HTMLFormElement | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
@@ -66,6 +71,10 @@ export default function Auth() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Safe debug marker (never log passwords)
+    console.info("[auth] sign-in submit", { email: email.trim() });
+
     if (!validateForm(false)) return;
 
     setIsSubmitting(true);
@@ -95,6 +104,10 @@ export default function Auth() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Safe debug marker (never log passwords)
+    console.info("[auth] sign-up submit", { email: email.trim() });
+
     if (!validateForm(true)) return;
 
     setIsSubmitting(true);
@@ -178,16 +191,22 @@ export default function Auth() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+        {/* Ensure toasts render on /auth (Layout is not mounted here) */}
+        <Toaster />
+        <Sonner />
+      </>
     );
   }
 
   if (isRecoveryFlow) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-        <div className="w-full max-w-md">
+      <>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
+          <div className="w-full max-w-md">
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
               <img src={logoImage} alt="ApplyPilot" className="w-24 h-24 object-contain" />
@@ -245,14 +264,19 @@ export default function Auth() {
               </form>
             </CardContent>
           </Card>
+          </div>
         </div>
-      </div>
+        {/* Ensure toasts render on /auth (Layout is not mounted here) */}
+        <Toaster />
+        <Sonner />
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <div className="w-full max-w-md">
+    <>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
+        <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8 animate-fade-in">
           <div className="flex justify-center mb-4">
@@ -284,7 +308,7 @@ export default function Auth() {
               </TabsList>
 
               <TabsContent value="signin">
-                <form onSubmit={handleSignIn} className="space-y-4">
+                <form ref={signInFormRef} onSubmit={handleSignIn} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="signin-email">Email</Label>
                     <div className="relative">
@@ -338,9 +362,10 @@ export default function Auth() {
                     )}
                   </div>
                   <Button
-                    type="submit"
+                    type="button"
                     className="w-full"
                     disabled={isSubmitting}
+                    onClick={() => signInFormRef.current?.requestSubmit()}
                   >
                     {isSubmitting ? (
                       <>
@@ -418,7 +443,7 @@ export default function Auth() {
               </TabsContent>
 
               <TabsContent value="signup">
-                <form onSubmit={handleSignUp} className="space-y-4">
+                <form ref={signUpFormRef} onSubmit={handleSignUp} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="signup-name">Full Name</Label>
                     <div className="relative">
@@ -500,9 +525,10 @@ export default function Auth() {
                     </p>
                   </div>
                   <Button
-                    type="submit"
+                    type="button"
                     className="w-full"
                     disabled={isSubmitting}
+                    onClick={() => signUpFormRef.current?.requestSubmit()}
                   >
                     {isSubmitting ? (
                       <>
@@ -532,7 +558,11 @@ export default function Auth() {
         <p className="text-center text-xs text-muted-foreground mt-6">
           By continuing, you agree to our Terms of Service and Privacy Policy.
         </p>
+        </div>
       </div>
-    </div>
+      {/* Ensure toasts render on /auth (Layout is not mounted here) */}
+      <Toaster />
+      <Sonner />
+    </>
   );
 }
