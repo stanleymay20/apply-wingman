@@ -54,7 +54,7 @@ export function OnboardingWizard({ open, onOpenChange }: OnboardingWizardProps) 
     {
       id: "welcome",
       title: "Welcome to ApplyPilot!",
-      description: "Let's get you set up to automate your job search. This quick setup will take about 2 minutes.",
+      description: "Let's get you set up to automate your job search—any industry, any role. This quick setup takes about 2 minutes.",
       icon: Sparkles,
       isCompleted: true,
     },
@@ -69,7 +69,7 @@ export function OnboardingWizard({ open, onOpenChange }: OnboardingWizardProps) 
     {
       id: "preferences",
       title: "Set Job Preferences",
-      description: "Tell us your preferred roles, locations, and minimum match score. This helps us find jobs you'll love.",
+      description: "Tell us your preferred job titles and locations. This helps us find jobs tailored to you.",
       icon: Target,
       action: { label: "Set Preferences", route: "/settings" },
       isCompleted: (profile?.preferred_roles?.length || 0) > 0 || (profile?.preferred_locations?.length || 0) > 0,

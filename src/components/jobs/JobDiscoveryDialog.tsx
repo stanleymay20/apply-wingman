@@ -149,7 +149,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
             Discover Matching Jobs
           </DialogTitle>
           <DialogDescription>
-            Search for jobs across multiple platforms that match your profile
+            Search for any job role across multiple platforms
           </DialogDescription>
         </DialogHeader>
 
@@ -159,7 +159,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
             <Label>Job Keywords / Roles</Label>
             <div className="flex gap-2">
               <Input
-                placeholder="e.g. Frontend Developer"
+                placeholder="e.g. Teacher, Nurse, Accountant"
                 value={newKeyword}
                 onChange={(e) => setNewKeyword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addKeyword()}

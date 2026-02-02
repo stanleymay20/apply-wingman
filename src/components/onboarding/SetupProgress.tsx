@@ -42,7 +42,7 @@ export function SetupProgress() {
     {
       id: "roles",
       title: "Set job preferences",
-      description: "Add preferred roles & locations",
+      description: "Add job titles & locations",
       icon: Target,
       route: "/profile",
       isCompleted: (profile?.preferred_roles?.length || 0) > 0,
