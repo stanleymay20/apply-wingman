@@ -44,13 +44,27 @@ export function useJobs() {
       const { data, error } = await supabase.functions.invoke("match-job", {
         body: { jobId, cvProfileId },
       });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      if (error) {
+        // Handle rate limit with user-friendly message
+        if (error.message?.includes("429") || error.message?.includes("Rate limit")) {
+          throw new Error("AI is busy - please wait a moment and try again");
+        }
+        throw error;
+      }
+      if (data.error) {
+        if (data.error.includes("Rate limit")) {
+          throw new Error("AI is busy - please wait a moment and try again");
+        }
+        throw new Error(data.error);
+      }
       return data.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       toast.success("Job matched");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to match job");
     },
   });
 
