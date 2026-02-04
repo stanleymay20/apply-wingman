@@ -51,7 +51,8 @@ export interface AutoOptimizationProgress {
   message: string;
 }
 
-const TARGET_SCORE = 90;
+// Lowered to allow applications without perfect CVs
+const TARGET_SCORE = 50;
 const MAX_ITERATIONS = 3;
 
 export function useCVAutoOptimization() {

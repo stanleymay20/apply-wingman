@@ -26,3 +26,9 @@ verify_jwt = false
 
 [functions.auto-apply]
 verify_jwt = false
+
+[functions.scheduled-automation]
+verify_jwt = false
+
+[functions.optimize-cv]
+verify_jwt = false
