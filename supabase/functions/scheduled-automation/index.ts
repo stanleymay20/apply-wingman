@@ -80,6 +80,7 @@ serve(async (req) => {
         for (const search of savedSearches) {
           try {
             // Discover jobs using the discover-jobs function via HTTP call
+            // Pass userId in body for internal service-to-service auth
             const discoverResponse = await fetch(`${supabaseUrl}/functions/v1/discover-jobs`, {
               method: "POST",
               headers: {
@@ -87,6 +88,7 @@ serve(async (req) => {
                 "Authorization": `Bearer ${supabaseServiceKey}`,
               },
               body: JSON.stringify({
+                userId: user.id, // Required for internal calls
                 keywords: search.keywords,
                 locations: search.locations,
                 platforms: search.platforms,

@@ -82,22 +82,42 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    let userId: string;
 
-    if (claimsError || !claimsData?.claims) {
-      console.error("JWT validation failed:", claimsError);
-      return new Response(
-        JSON.stringify({ success: false, error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Check if this is a service role key (internal server-to-server call)
+    if (token === supabaseServiceKey) {
+      // Internal call from scheduled-automation - get userId from body
+      const rawBody = await req.clone().json();
+      userId = rawBody.userId;
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ success: false, error: "userId required for internal calls" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log(`Internal call for user: ${userId}`);
+    } else {
+      // Regular user call - validate JWT
+      const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+
+      const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+
+      if (claimsError || !claimsData?.claims) {
+        console.error("JWT validation failed:", claimsError);
+        return new Response(
+          JSON.stringify({ success: false, error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      userId = claimsData.claims.sub;
     }
-
-    const userId = claimsData.claims.sub;
+    
     console.log(`Authenticated user: ${userId}`);
     // ===== END AUTHENTICATION =====
 
