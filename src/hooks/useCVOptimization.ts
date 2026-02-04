@@ -19,7 +19,8 @@ interface CVOptimizationParams {
   targetScore?: number;
 }
 
-const MIN_SCORE_FOR_AUTO_APPLY = 90;
+// Lowered to allow applications without perfect CVs
+const MIN_SCORE_FOR_AUTO_APPLY = 50;
 const MAX_OPTIMIZATION_ATTEMPTS = 3;
 
 export function useCVOptimization() {

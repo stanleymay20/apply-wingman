@@ -12,8 +12,8 @@ const corsHeaders = {
 const SENDER_EMAIL = "jobs@scrolllibrary.app";
 const SENDER_NAME = "ApplyPilot";
 
-// Application cap - set to 1 until manually approved for scaling
-const MAX_DAILY_APPLICATIONS = 1;
+// Application cap - raised for real usage
+const MAX_DAILY_APPLICATIONS = 25;
 
 interface ApplyRequest {
   applicationId: string;
