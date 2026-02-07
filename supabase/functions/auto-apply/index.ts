@@ -119,7 +119,8 @@ serve(async (req) => {
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
-  // ===== AUTHENTICATION (MANDATORY) =====
+  // ===== AUTHENTICATION =====
+  // Support both user JWT auth and service-role internal calls
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return new Response(
@@ -128,22 +129,39 @@ serve(async (req) => {
     );
   }
 
-  const authSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
   const token = authHeader.replace("Bearer ", "");
-  const { data: claimsData, error: claimsError } = await authSupabase.auth.getClaims(token);
+  let userId: string;
 
-  if (claimsError || !claimsData?.claims?.sub) {
-    console.error("JWT validation failed:", claimsError);
-    return new Response(
-      JSON.stringify({ success: false, error: "Unauthorized - invalid token" }),
-      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  // Check if this is a service-role internal call
+  if (token === supabaseServiceKey) {
+    // Internal call from scheduled-automation — userId must be in the body
+    const bodyClone = req.clone();
+    const bodyData = await bodyClone.json();
+    if (!bodyData.userId) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Internal call missing userId" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    userId = bodyData.userId;
+    console.log(`Internal service call for user: ${userId}`);
+  } else {
+    // User JWT auth
+    const authSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: claimsData, error: claimsError } = await authSupabase.auth.getClaims(token);
+
+    if (claimsError || !claimsData?.claims?.sub) {
+      console.error("JWT validation failed:", claimsError);
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized - invalid token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    userId = claimsData.claims.sub as string;
   }
-
-  const userId = claimsData.claims.sub;
   console.log(`Authenticated user for auto-apply: ${userId}`);
   // ===== END AUTHENTICATION =====
 
