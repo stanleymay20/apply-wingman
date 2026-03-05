@@ -18,48 +18,42 @@ serve(async (req) => {
   console.log("🚀 Scheduled automation starting...");
 
   try {
-    // Get all users with active automation and saved searches
     const { data: activeUsers, error: usersError } = await supabase
       .from("profiles")
       .select("id, email, full_name, automation_status, minimum_fit_score, daily_application_cap")
       .eq("automation_status", "running");
 
-    if (usersError) {
-      console.error("Failed to fetch users:", usersError);
-      throw usersError;
-    }
+    if (usersError) throw usersError;
 
     console.log(`Found ${activeUsers?.length || 0} users with automation enabled`);
 
-    const results: { userId: string; jobsDiscovered: number; applicationsAttempted: number; errors: string[] }[] = [];
+    const results: { userId: string; jobsDiscovered: number; applicationsAttempted: number; applicationsSubmitted: number; errors: string[] }[] = [];
 
     for (const user of activeUsers || []) {
-      const userResult = { userId: user.id, jobsDiscovered: 0, applicationsAttempted: 0, errors: [] as string[] };
+      const userResult = { userId: user.id, jobsDiscovered: 0, applicationsAttempted: 0, applicationsSubmitted: 0, errors: [] as string[] };
 
       try {
-        // Get user's active saved searches
+        // Get active saved searches
         const { data: savedSearches } = await supabase
           .from("saved_searches")
           .select("*")
           .eq("user_id", user.id)
           .eq("is_active", true);
 
-        if (!savedSearches || savedSearches.length === 0) {
+        if (!savedSearches?.length) {
           console.log(`User ${user.id} has no active saved searches, skipping`);
           continue;
         }
 
-        console.log(`User ${user.id} has ${savedSearches.length} active saved searches`);
-
-        // Get user's CV profile for matching
+        // Get CV profile
         const { data: cvProfile } = await supabase
           .from("cv_profiles")
-          .select("id, resume_score, skills, summary")
+          .select("id, resume_score, skills, summary, cv_file_url")
           .eq("user_id", user.id)
           .eq("is_active", true)
           .single();
 
-        // Check today's application count
+        // Check daily cap
         const today = new Date().toISOString().split("T")[0];
         const { data: todayApps } = await supabase
           .from("applications")
@@ -72,15 +66,13 @@ serve(async (req) => {
         const remainingCap = dailyCap - (todayApps?.length || 0);
 
         if (remainingCap <= 0) {
-          console.log(`User ${user.id} has reached daily cap (${dailyCap}), skipping`);
+          console.log(`User ${user.id} reached daily cap (${dailyCap}), skipping`);
           continue;
         }
 
         // Process each saved search
         for (const search of savedSearches) {
           try {
-            // Discover jobs using the discover-jobs function via HTTP call
-            // Pass userId in body for internal service-to-service auth
             const discoverResponse = await fetch(`${supabaseUrl}/functions/v1/discover-jobs`, {
               method: "POST",
               headers: {
@@ -88,7 +80,7 @@ serve(async (req) => {
                 "Authorization": `Bearer ${supabaseServiceKey}`,
               },
               body: JSON.stringify({
-                userId: user.id, // Required for internal calls
+                userId: user.id,
                 keywords: search.keywords,
                 locations: search.locations,
                 platforms: search.platforms,
@@ -97,30 +89,22 @@ serve(async (req) => {
 
             if (!discoverResponse.ok) {
               const errorText = await discoverResponse.text();
-              console.error(`Discovery failed for search ${search.id}:`, errorText);
               userResult.errors.push(`Discovery failed: ${errorText}`);
               continue;
             }
 
             const discoverData = await discoverResponse.json();
             const jobs = discoverData.jobs || [];
-            
-            console.log(`Search "${search.name}" found ${jobs.length} jobs`);
             userResult.jobsDiscovered += jobs.length;
 
-            // Save discovered jobs
             if (jobs.length > 0) {
-              // Check for existing jobs to avoid duplicates
               const { data: existingJobs } = await supabase
                 .from("jobs")
                 .select("source_url")
                 .eq("user_id", user.id);
 
-              const existingUrls = new Set((existingJobs || []).map(j => j.source_url?.toLowerCase()));
-
-              const newJobs = jobs.filter((job: any) => 
-                !existingUrls.has(job.source_url?.toLowerCase())
-              );
+              const existingUrls = new Set((existingJobs || []).map((j: any) => j.source_url?.toLowerCase()));
+              const newJobs = jobs.filter((job: any) => !existingUrls.has(job.source_url?.toLowerCase()));
 
               if (newJobs.length > 0) {
                 const jobsToInsert = newJobs.map((job: any) => ({
@@ -140,81 +124,87 @@ serve(async (req) => {
                 const { data: insertedJobs, error: insertError } = await supabase
                   .from("jobs")
                   .insert(jobsToInsert)
-                  .select("id, title, company");
+                  .select("id, title, company, source_url, source_platform");
 
                 if (insertError) {
-                  console.error("Failed to insert jobs:", insertError);
                   userResult.errors.push(`Insert failed: ${insertError.message}`);
-                } else {
-                  console.log(`Inserted ${insertedJobs?.length || 0} new jobs for user ${user.id}`);
+                } else if (cvProfile && insertedJobs) {
+                  // Match and auto-apply for high-scoring jobs
+                  for (const job of insertedJobs.slice(0, 10)) {
+                    try {
+                      const matchResponse = await fetch(`${supabaseUrl}/functions/v1/match-job`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "Authorization": `Bearer ${supabaseServiceKey}`,
+                        },
+                        body: JSON.stringify({ jobId: job.id, cvProfileId: cvProfile.id }),
+                      });
 
-                  // Match jobs if CV profile exists
-                  if (cvProfile && insertedJobs) {
-                    for (const job of insertedJobs.slice(0, 10)) { // Limit matching to first 10
-                      try {
-                        const matchResponse = await fetch(`${supabaseUrl}/functions/v1/match-job`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "Authorization": `Bearer ${supabaseServiceKey}`,
-                          },
-                          body: JSON.stringify({
+                      if (!matchResponse.ok) continue;
+
+                      const matchData = await matchResponse.json();
+                      const score = matchData.data?.score || 0;
+
+                      await supabase
+                        .from("jobs")
+                        .update({ match_score: score, match_details: matchData.data })
+                        .eq("id", job.id);
+
+                      const minScore = user.minimum_fit_score || 70;
+                      if (score >= minScore && userResult.applicationsAttempted < remainingCap) {
+                        // Create application record
+                        const { data: app } = await supabase
+                          .from("applications")
+                          .insert({
+                            user_id: user.id,
+                            job_id: job.id,
+                            cv_profile_id: cvProfile.id,
+                            match_score: score,
+                            status: "pending",
+                          })
+                          .select()
+                          .single();
+
+                        if (app) {
+                          userResult.applicationsAttempted++;
+
+                          // Trigger auto-apply submission
+                          const submitted = await triggerAutoApply(supabaseUrl, supabaseServiceKey, {
+                            userId: user.id,
+                            applicationId: app.id,
                             jobId: job.id,
-                            cvProfileId: cvProfile.id,
-                          }),
-                        });
+                            jobTitle: job.title,
+                            company: job.company,
+                            sourceUrl: job.source_url,
+                            sourcePlatform: job.source_platform,
+                            userName: user.full_name || user.email,
+                            userEmail: user.email,
+                            cvFileUrl: cvProfile.cv_file_url || undefined,
+                          });
 
-                        if (matchResponse.ok) {
-                          const matchData = await matchResponse.json();
-                          const score = matchData.data?.score || 0;
-
-                          // Update job with match score
-                          await supabase
-                            .from("jobs")
-                            .update({ match_score: score, match_details: matchData.data })
-                            .eq("id", job.id);
-
-                          // If high match and within cap, create application
-                          const minScore = user.minimum_fit_score || 70;
-                          if (score >= minScore && userResult.applicationsAttempted < remainingCap) {
-                            // Create application record
-                            const { data: app } = await supabase
-                              .from("applications")
-                              .insert({
-                                user_id: user.id,
-                                job_id: job.id,
-                                cv_profile_id: cvProfile.id,
-                                match_score: score,
-                                status: "pending",
-                              })
-                              .select()
-                              .single();
-
-                            if (app) {
-                              userResult.applicationsAttempted++;
-                              console.log(`Created application for ${job.title} at ${job.company} (score: ${score}%)`);
-
-                              // Create notification
-                              await supabase.from("notifications").insert({
-                                user_id: user.id,
-                                type: "high_match_job",
-                                title: "🎯 High Match Job Found!",
-                                message: `${job.title} at ${job.company} - ${score}% match`,
-                                data: { jobId: job.id, score },
-                              });
-                            }
+                          if (submitted) {
+                            userResult.applicationsSubmitted++;
                           }
+
+                          // Notification
+                          await supabase.from("notifications").insert({
+                            user_id: user.id,
+                            type: "high_match_job",
+                            title: "🎯 High Match Job Found!",
+                            message: `${job.title} at ${job.company} - ${score}% match${submitted ? " (auto-applied)" : ""}`,
+                            data: { jobId: job.id, score, applied: submitted },
+                          });
                         }
-                      } catch (matchError) {
-                        console.error(`Match error for job ${job.id}:`, matchError);
                       }
+                    } catch (matchError) {
+                      console.error(`Match error for job ${job.id}:`, matchError);
                     }
                   }
                 }
               }
             }
 
-            // Update last_run_at for the saved search
             await supabase
               .from("saved_searches")
               .update({ last_run_at: new Date().toISOString() })
@@ -226,7 +216,7 @@ serve(async (req) => {
           }
         }
 
-        // Create job discovery run record
+        // Record discovery run
         await supabase.from("job_discovery_runs").insert({
           user_id: user.id,
           params: { type: "scheduled", searchCount: savedSearches.length },
@@ -248,8 +238,9 @@ serve(async (req) => {
 
     const totalJobs = results.reduce((sum, r) => sum + r.jobsDiscovered, 0);
     const totalApps = results.reduce((sum, r) => sum + r.applicationsAttempted, 0);
+    const totalSubmitted = results.reduce((sum, r) => sum + r.applicationsSubmitted, 0);
 
-    console.log(`✅ Scheduled automation complete. Jobs: ${totalJobs}, Applications: ${totalApps}`);
+    console.log(`✅ Automation complete. Jobs: ${totalJobs}, Apps created: ${totalApps}, Submitted: ${totalSubmitted}`);
 
     return new Response(
       JSON.stringify({
@@ -259,6 +250,7 @@ serve(async (req) => {
           usersProcessed: results.length,
           totalJobsDiscovered: totalJobs,
           totalApplicationsCreated: totalApps,
+          totalApplicationsSubmitted: totalSubmitted,
         },
         results,
       }),
@@ -268,11 +260,81 @@ serve(async (req) => {
   } catch (error) {
     console.error("Scheduled automation error:", error);
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      }),
+      JSON.stringify({ success: false, error: error instanceof Error ? error.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
+
+/**
+ * Triggers the auto-apply edge function for a pending application.
+ * Detects best method (email vs ATS vs assisted) based on source URL.
+ */
+async function triggerAutoApply(
+  supabaseUrl: string,
+  serviceKey: string,
+  params: {
+    userId: string;
+    applicationId: string;
+    jobId: string;
+    jobTitle: string;
+    company: string;
+    sourceUrl: string;
+    sourcePlatform: string;
+    userName: string;
+    userEmail: string;
+    cvFileUrl?: string;
+  }
+): Promise<boolean> {
+  try {
+    const method = detectApplyMethod(params.sourceUrl);
+    console.log(`Auto-applying for "${params.jobTitle}" at ${params.company} via ${method}`);
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/auto-apply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({
+        userId: params.userId,
+        applicationId: params.applicationId,
+        jobId: params.jobId,
+        method,
+        userName: params.userName,
+        userEmail: params.userEmail,
+        jobTitle: params.jobTitle,
+        company: params.company,
+        sourceUrl: params.sourceUrl,
+        sourcePlatform: params.sourcePlatform,
+        cvFileUrl: params.cvFileUrl,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Auto-apply failed for ${params.applicationId}: ${errorText}`);
+      return false;
+    }
+
+    const result = await response.json();
+    console.log(`Auto-apply result for ${params.applicationId}:`, result.success ? "SUCCESS" : "FAILED");
+    return result.success === true;
+  } catch (error) {
+    console.error(`Auto-apply error for ${params.applicationId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Detects the best application method based on the job source URL.
+ */
+function detectApplyMethod(sourceUrl: string): "email" | "ats_api" | "assisted" {
+  const url = sourceUrl.toLowerCase();
+  if (url.includes("greenhouse.io") || url.includes("boards.greenhouse")) return "ats_api";
+  if (url.includes("lever.co")) return "ats_api";
+  if (url.includes("workday")) return "assisted";
+  if (url.includes("linkedin.com")) return "assisted";
+  // Default to email for company websites and other sources
+  return "email";
+}
