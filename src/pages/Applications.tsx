@@ -56,6 +56,7 @@ import { ReferralEmailDialog } from "@/components/applications/ReferralEmailDial
 import { LogEmailDialog } from "@/components/applications/LogEmailDialog";
 import { ApplicationContractDialog } from "@/components/applications/ApplicationContractDialog";
 import { AutoApplyButton } from "@/components/jobs/AutoApplyButton";
+import { useAutoApply } from "@/hooks/useAutoApply";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
