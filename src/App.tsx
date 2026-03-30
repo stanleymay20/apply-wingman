@@ -83,6 +83,7 @@ const App = () => (
               <Route path="/profile" element={<Layout><Profile /></Layout>} />
               <Route path="/analytics" element={<Layout><Analytics /></Layout>} />
               <Route path="/settings" element={<Layout><Settings /></Layout>} />
+              <Route path="/activity" element={<Layout><ActivityLog /></Layout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GlobalProviders>
