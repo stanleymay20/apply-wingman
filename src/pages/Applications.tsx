@@ -172,6 +172,7 @@ export default function Applications() {
               <SelectItem value="interview">Interview</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
               <SelectItem value="offer">Offer</SelectItem>
             </SelectContent>
           </Select>
