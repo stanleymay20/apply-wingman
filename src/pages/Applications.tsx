@@ -286,6 +286,38 @@ export default function Applications() {
         </div>
       </div>
 
+      {/* Delivery Stats Summary */}
+      {applications.length > 0 && (() => {
+        const emailApps = applications.filter(a => a.application_method === "email");
+        const sent = emailApps.filter(a => a.status === "submitted").length;
+        const failed = emailApps.filter(a => a.status === "failed").length;
+        const pending = emailApps.filter(a => a.status === "pending").length;
+        const total = emailApps.length;
+        
+        if (total === 0) return null;
+        
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 animate-fade-in">
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-foreground">{total}</p>
+              <p className="text-xs text-muted-foreground">Email Apps</p>
+            </div>
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-success">{sent}</p>
+              <p className="text-xs text-muted-foreground">Delivered</p>
+            </div>
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-destructive">{failed}</p>
+              <p className="text-xs text-muted-foreground">Failed</p>
+            </div>
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-warning">{pending}</p>
+              <p className="text-xs text-muted-foreground">Pending</p>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Applications Table */}
       <div className="glass-card overflow-hidden animate-scale-in">
         {applications.length === 0 ? (
