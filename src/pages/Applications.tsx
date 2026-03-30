@@ -63,6 +63,7 @@ type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_
 export default function Applications() {
   const { applications, isLoading, refetch } = useApplications();
   const { createJob, isLoading: jobsLoading } = useJobs();
+  const { autoApply, isApplying } = useAutoApply();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
