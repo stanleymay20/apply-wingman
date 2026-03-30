@@ -17,6 +17,7 @@ import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
+import ActivityLog from "./pages/ActivityLog";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
