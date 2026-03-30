@@ -487,20 +487,53 @@ export default function Applications() {
                             }
                           />
 
-                          {/* Auto Apply Button */}
-                          {app.status === "pending" && app.job && (
-                            <AutoApplyButton
-                              job={{
-                                id: app.job_id,
-                                title: app.job.title,
-                                company: app.job.company,
-                                source_url: app.job.source_url,
-                                source_platform: app.job.source_platform,
-                                application: { id: app.id, cover_letter: app.cover_letter || undefined },
-                              }}
-                              variant="ghost"
-                              size="sm"
-                            />
+                          {/* Auto Apply / Retry Button */}
+                          {(app.status === "pending" || app.status === "failed") && app.job && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                {app.status === "failed" ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isApplying}
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => {
+                                      if (!app.job) return;
+                                      autoApply({
+                                        applicationId: app.id,
+                                        jobId: app.job_id,
+                                        method: app.application_method === "email" ? "email" : "assisted",
+                                        jobTitle: app.job.title,
+                                        company: app.job.company,
+                                        sourceUrl: app.job.source_url,
+                                        sourcePlatform: app.job.source_platform,
+                                        coverLetter: app.cover_letter || undefined,
+                                      });
+                                    }}
+                                  >
+                                    <Rocket className="w-4 h-4" />
+                                  </Button>
+                                ) : (
+                                  <span>
+                                    <AutoApplyButton
+                                      job={{
+                                        id: app.job_id,
+                                        title: app.job.title,
+                                        company: app.job.company,
+                                        source_url: app.job.source_url,
+                                        source_platform: app.job.source_platform,
+                                        application: { id: app.id, cover_letter: app.cover_letter || undefined },
+                                      }}
+                                      variant="ghost"
+                                      size="sm"
+                                    />
+                                  </span>
+                                )}
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {app.status === "failed" ? "Retry application" : "Auto apply"}
+                              </TooltipContent>
+                            </Tooltip>
                           )}
 
                           {/* External Link */}
