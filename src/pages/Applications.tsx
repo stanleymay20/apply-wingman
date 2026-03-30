@@ -56,12 +56,14 @@ import { ReferralEmailDialog } from "@/components/applications/ReferralEmailDial
 import { LogEmailDialog } from "@/components/applications/LogEmailDialog";
 import { ApplicationContractDialog } from "@/components/applications/ApplicationContractDialog";
 import { AutoApplyButton } from "@/components/jobs/AutoApplyButton";
+import { useAutoApply } from "@/hooks/useAutoApply";
 
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
 export default function Applications() {
   const { applications, isLoading, refetch } = useApplications();
   const { createJob, isLoading: jobsLoading } = useJobs();
+  const { autoApply, isApplying } = useAutoApply();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -170,6 +172,7 @@ export default function Applications() {
               <SelectItem value="interview">Interview</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
               <SelectItem value="offer">Offer</SelectItem>
             </SelectContent>
           </Select>
@@ -283,6 +286,38 @@ export default function Applications() {
           </Dialog>
         </div>
       </div>
+
+      {/* Delivery Stats Summary */}
+      {applications.length > 0 && (() => {
+        const emailApps = applications.filter(a => a.application_method === "email");
+        const sent = emailApps.filter(a => a.status === "submitted").length;
+        const failed = emailApps.filter(a => a.status === "failed").length;
+        const pending = emailApps.filter(a => a.status === "pending").length;
+        const total = emailApps.length;
+        
+        if (total === 0) return null;
+        
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 animate-fade-in">
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-foreground">{total}</p>
+              <p className="text-xs text-muted-foreground">Email Apps</p>
+            </div>
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-success">{sent}</p>
+              <p className="text-xs text-muted-foreground">Delivered</p>
+            </div>
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-destructive">{failed}</p>
+              <p className="text-xs text-muted-foreground">Failed</p>
+            </div>
+            <div className="glass-card p-3 text-center">
+              <p className="text-2xl font-bold text-warning">{pending}</p>
+              <p className="text-xs text-muted-foreground">Pending</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Applications Table */}
       <div className="glass-card overflow-hidden animate-scale-in">
@@ -453,20 +488,53 @@ export default function Applications() {
                             }
                           />
 
-                          {/* Auto Apply Button */}
-                          {app.status === "pending" && app.job && (
-                            <AutoApplyButton
-                              job={{
-                                id: app.job_id,
-                                title: app.job.title,
-                                company: app.job.company,
-                                source_url: app.job.source_url,
-                                source_platform: app.job.source_platform,
-                                application: { id: app.id, cover_letter: app.cover_letter || undefined },
-                              }}
-                              variant="ghost"
-                              size="sm"
-                            />
+                          {/* Auto Apply / Retry Button */}
+                          {(app.status === "pending" || app.status === "failed") && app.job && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                {app.status === "failed" ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isApplying}
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => {
+                                      if (!app.job) return;
+                                      autoApply({
+                                        applicationId: app.id,
+                                        jobId: app.job_id,
+                                        method: app.application_method === "email" ? "email" : "assisted",
+                                        jobTitle: app.job.title,
+                                        company: app.job.company,
+                                        sourceUrl: app.job.source_url,
+                                        sourcePlatform: app.job.source_platform,
+                                        coverLetter: app.cover_letter || undefined,
+                                      });
+                                    }}
+                                  >
+                                    <Rocket className="w-4 h-4" />
+                                  </Button>
+                                ) : (
+                                  <span>
+                                    <AutoApplyButton
+                                      job={{
+                                        id: app.job_id,
+                                        title: app.job.title,
+                                        company: app.job.company,
+                                        source_url: app.job.source_url,
+                                        source_platform: app.job.source_platform,
+                                        application: { id: app.id, cover_letter: app.cover_letter || undefined },
+                                      }}
+                                      variant="ghost"
+                                      size="sm"
+                                    />
+                                  </span>
+                                )}
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {app.status === "failed" ? "Retry application" : "Auto apply"}
+                              </TooltipContent>
+                            </Tooltip>
                           )}
 
                           {/* External Link */}
