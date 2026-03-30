@@ -294,27 +294,70 @@ export default function Applications() {
         const failed = emailApps.filter(a => a.status === "failed").length;
         const pending = emailApps.filter(a => a.status === "pending").length;
         const total = emailApps.length;
+        const failedApps = applications.filter(a => a.status === "failed" && a.job);
         
-        if (total === 0) return null;
+        if (total === 0 && failedApps.length === 0) return null;
         
         return (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 animate-fade-in">
-            <div className="glass-card p-3 text-center">
-              <p className="text-2xl font-bold text-foreground">{total}</p>
-              <p className="text-xs text-muted-foreground">Email Apps</p>
-            </div>
-            <div className="glass-card p-3 text-center">
-              <p className="text-2xl font-bold text-success">{sent}</p>
-              <p className="text-xs text-muted-foreground">Delivered</p>
-            </div>
-            <div className="glass-card p-3 text-center">
-              <p className="text-2xl font-bold text-destructive">{failed}</p>
-              <p className="text-xs text-muted-foreground">Failed</p>
-            </div>
-            <div className="glass-card p-3 text-center">
-              <p className="text-2xl font-bold text-warning">{pending}</p>
-              <p className="text-xs text-muted-foreground">Pending</p>
-            </div>
+          <div className="space-y-3 mb-6 animate-fade-in">
+            {total > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="glass-card p-3 text-center">
+                  <p className="text-2xl font-bold text-foreground">{total}</p>
+                  <p className="text-xs text-muted-foreground">Email Apps</p>
+                </div>
+                <div className="glass-card p-3 text-center">
+                  <p className="text-2xl font-bold text-success">{sent}</p>
+                  <p className="text-xs text-muted-foreground">Delivered</p>
+                </div>
+                <div className="glass-card p-3 text-center">
+                  <p className="text-2xl font-bold text-destructive">{failed}</p>
+                  <p className="text-xs text-muted-foreground">Failed</p>
+                </div>
+                <div className="glass-card p-3 text-center">
+                  <p className="text-2xl font-bold text-warning">{pending}</p>
+                  <p className="text-xs text-muted-foreground">Pending</p>
+                </div>
+              </div>
+            )}
+            {failedApps.length > 0 && (
+              <div className="glass-card p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-destructive" />
+                  <span className="text-sm text-muted-foreground">
+                    {failedApps.length} failed application{failedApps.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isApplying}
+                  onClick={async () => {
+                    toast.info(`Retrying ${failedApps.length} failed applications...`);
+                    for (const app of failedApps) {
+                      if (!app.job) continue;
+                      autoApply({
+                        applicationId: app.id,
+                        jobId: app.job_id,
+                        method: app.application_method === "email" ? "email" : "assisted",
+                        jobTitle: app.job.title,
+                        company: app.job.company,
+                        sourceUrl: app.job.source_url,
+                        sourcePlatform: app.job.source_platform,
+                        coverLetter: app.cover_letter || undefined,
+                      });
+                    }
+                  }}
+                >
+                  {isApplying ? (
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  ) : (
+                    <Rocket className="w-3 h-3 mr-1" />
+                  )}
+                  Retry All Failed
+                </Button>
+              </div>
+            )}
           </div>
         );
       })()}

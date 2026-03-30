@@ -12,6 +12,7 @@ import {
   X,
   Command,
   Search,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
@@ -32,6 +33,7 @@ const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
   { path: "/jobs", icon: Search, label: "Jobs" },
   { path: "/applications", icon: Briefcase, label: "Applications" },
+  { path: "/activity", icon: Activity, label: "Activity Log" },
   { path: "/profile", icon: FileText, label: "My Profile" },
   { path: "/analytics", icon: BarChart3, label: "Analytics" },
   { path: "/settings", icon: Settings, label: "Settings" },

@@ -17,6 +17,7 @@ import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
+import ActivityLog from "./pages/ActivityLog";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -82,6 +83,7 @@ const App = () => (
               <Route path="/profile" element={<Layout><Profile /></Layout>} />
               <Route path="/analytics" element={<Layout><Analytics /></Layout>} />
               <Route path="/settings" element={<Layout><Settings /></Layout>} />
+              <Route path="/activity" element={<Layout><ActivityLog /></Layout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GlobalProviders>
