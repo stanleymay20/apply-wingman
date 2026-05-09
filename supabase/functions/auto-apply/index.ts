@@ -8,8 +8,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Production email sender configuration
-const SENDER_EMAIL = "jobs@scrolllibrary.app";
+// Email sender configuration
+// NOTE: Using Resend's test domain until scrolllibrary.app is verified.
+// IMPORTANT: With onboarding@resend.dev, Resend only delivers to the email
+// address of the Resend account owner. Real recruiter inboxes will be rejected.
+const SENDER_EMAIL = "onboarding@resend.dev";
 const SENDER_NAME = "ApplyPilot";
 
 // Application cap - raised for real usage
