@@ -75,6 +75,8 @@ export interface Profile {
   saved_search_frequency: string;
   bulk_apply_mode: string;
   job_details_view: string;
+  delivery_mode: 'test' | 'production' | 'disabled';
+  test_email_override: string | null;
   created_at: string;
   updated_at: string;
 }
