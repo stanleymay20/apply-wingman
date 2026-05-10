@@ -128,6 +128,7 @@ export type Database = {
       }
       applications: {
         Row: {
+          actual_recipient: string | null
           application_contract: Json | null
           application_method: string | null
           applied_at: string | null
@@ -139,6 +140,7 @@ export type Database = {
           created_at: string | null
           custom_responses: Json | null
           cv_profile_id: string | null
+          delivery_mode: string | null
           documents_required: string[] | null
           documents_uploaded: string[] | null
           error_message: string | null
@@ -146,6 +148,7 @@ export type Database = {
           job_id: string
           match_score: number
           notes: string | null
+          original_recipient: string | null
           response_received_at: string | null
           retry_count: number | null
           status: string | null
@@ -153,6 +156,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          actual_recipient?: string | null
           application_contract?: Json | null
           application_method?: string | null
           applied_at?: string | null
@@ -164,6 +168,7 @@ export type Database = {
           created_at?: string | null
           custom_responses?: Json | null
           cv_profile_id?: string | null
+          delivery_mode?: string | null
           documents_required?: string[] | null
           documents_uploaded?: string[] | null
           error_message?: string | null
@@ -171,6 +176,7 @@ export type Database = {
           job_id: string
           match_score: number
           notes?: string | null
+          original_recipient?: string | null
           response_received_at?: string | null
           retry_count?: number | null
           status?: string | null
@@ -178,6 +184,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          actual_recipient?: string | null
           application_contract?: Json | null
           application_method?: string | null
           applied_at?: string | null
@@ -189,6 +196,7 @@ export type Database = {
           created_at?: string | null
           custom_responses?: Json | null
           cv_profile_id?: string | null
+          delivery_mode?: string | null
           documents_required?: string[] | null
           documents_uploaded?: string[] | null
           error_message?: string | null
@@ -196,6 +204,7 @@ export type Database = {
           job_id?: string
           match_score?: number
           notes?: string | null
+          original_recipient?: string | null
           response_received_at?: string | null
           retry_count?: number | null
           status?: string | null
@@ -611,6 +620,7 @@ export type Database = {
           bulk_apply_mode: string | null
           created_at: string | null
           daily_application_cap: number | null
+          delivery_mode: string
           email: string
           email_notifications: boolean | null
           full_name: string | null
@@ -624,6 +634,7 @@ export type Database = {
           preferred_locations: string[] | null
           preferred_roles: string[] | null
           saved_search_frequency: string | null
+          test_email_override: string | null
           theme_preference: string | null
           updated_at: string | null
           visa_required: boolean | null
@@ -633,6 +644,7 @@ export type Database = {
           bulk_apply_mode?: string | null
           created_at?: string | null
           daily_application_cap?: number | null
+          delivery_mode?: string
           email: string
           email_notifications?: boolean | null
           full_name?: string | null
@@ -646,6 +658,7 @@ export type Database = {
           preferred_locations?: string[] | null
           preferred_roles?: string[] | null
           saved_search_frequency?: string | null
+          test_email_override?: string | null
           theme_preference?: string | null
           updated_at?: string | null
           visa_required?: boolean | null
@@ -655,6 +668,7 @@ export type Database = {
           bulk_apply_mode?: string | null
           created_at?: string | null
           daily_application_cap?: number | null
+          delivery_mode?: string
           email?: string
           email_notifications?: boolean | null
           full_name?: string | null
@@ -668,6 +682,7 @@ export type Database = {
           preferred_locations?: string[] | null
           preferred_roles?: string[] | null
           saved_search_frequency?: string | null
+          test_email_override?: string | null
           theme_preference?: string | null
           updated_at?: string | null
           visa_required?: boolean | null
