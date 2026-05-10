@@ -14,6 +14,7 @@ import { AutomationToggle } from "@/components/dashboard/AutomationToggle";
 import { RecentApplications } from "@/components/dashboard/RecentApplications";
 import { ApplicationFunnel } from "@/components/dashboard/ApplicationFunnel";
 import { SetupProgress } from "@/components/onboarding/SetupProgress";
+import { EmailInfrastructureCard } from "@/components/dashboard/EmailInfrastructureCard";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
 import { useAuth } from "@/hooks/useAuth";
 import { Kbd } from "@/components/ui/kbd";
@@ -106,6 +107,7 @@ export default function Dashboard() {
             max={stats?.dailyCap || 50} 
           />
           <AutomationToggle />
+          <EmailInfrastructureCard />
           
           {/* Next Scheduled Run */}
           <div className="glass-card p-6 animate-scale-in">
