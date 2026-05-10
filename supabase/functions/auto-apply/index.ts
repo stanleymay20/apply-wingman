@@ -254,6 +254,59 @@ serve(async (req) => {
 
       const resend = new Resend(resendKey);
 
+      // ===== DELIVERY MODE ROUTING =====
+      // Read user's delivery mode + test email override.
+      const { data: deliveryProfile } = await supabase
+        .from("profiles")
+        .select("delivery_mode, test_email_override")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const deliveryMode = (deliveryProfile?.delivery_mode as string) || "test";
+      const testOverride = (deliveryProfile?.test_email_override as string) || userEmail;
+
+      const originalRecipient = recipientEmail;
+      let actualRecipient = recipientEmail;
+
+      if (deliveryMode === "disabled") {
+        const msg = `Delivery is disabled in user settings. Email NOT sent to ${recipientEmail}.`;
+        console.warn(msg);
+        await supabase.from("application_logs").insert({
+          user_id: userId,
+          application_id: applicationId,
+          job_id: jobId,
+          action: "auto_apply_email_blocked",
+          message: msg,
+          level: "warn",
+          details: { originalRecipient, deliveryMode },
+        });
+        await supabase
+          .from("applications")
+          .update({
+            status: "manual_action_required",
+            original_recipient: originalRecipient,
+            actual_recipient: null,
+            delivery_mode: deliveryMode,
+            error_message: "Delivery disabled in settings",
+          })
+          .eq("id", applicationId);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: msg,
+            deliveryMode,
+            originalRecipient,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (deliveryMode === "test") {
+        actualRecipient = testOverride;
+        console.log(`[TEST MODE] Redirecting recipient ${originalRecipient} -> ${actualRecipient}`);
+      }
+      // ===== END DELIVERY MODE ROUTING =====
+
       // Generate professional application email using AI
       let emailBody = coverLetter || "";
       if (!emailBody && lovableKey) {
