@@ -368,16 +368,26 @@ ${userName}`;
         });
       }
 
-      console.log(`Sending email from ${SENDER_EMAIL} to ${recipientEmail}`);
+      const testBanner =
+        deliveryMode === "test"
+          ? `<div style="background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px;border-radius:6px;margin-bottom:16px;font-size:13px;">
+              <strong>⚠ TEST MODE</strong> — This email was redirected from <code>${originalRecipient}</code> to your test inbox. No real recruiter received it.
+            </div>`
+          : "";
+
+      const subjectPrefix = deliveryMode === "test" ? "[TEST] " : "";
+
+      console.log(`Sending email from ${SENDER_EMAIL} to ${actualRecipient} (mode=${deliveryMode}, original=${originalRecipient})`);
 
       try {
         const { data: emailData, error: emailError } = await resend.emails.send({
           from: `${userName} via ${SENDER_NAME} <${SENDER_EMAIL}>`,
-          to: [recipientEmail],
+          to: [actualRecipient],
           reply_to: userEmail,
-          subject: `Application for ${jobTitle} - ${userName}`,
+          subject: `${subjectPrefix}Application for ${jobTitle} - ${userName}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              ${testBanner}
               ${emailBody.split("\n").map((p) => `<p style="margin: 0 0 16px 0;">${p}</p>`).join("")}
               <hr style="margin: 24px 0; border: none; border-top: 1px solid #e0e0e0;" />
               <p style="color: #666; font-size: 12px;">
@@ -390,31 +400,35 @@ ${userName}`;
 
         if (emailError) {
           console.error("Resend API error:", emailError);
-          
-          // Log delivery failure
-          await logDeliveryFailure(supabase, userId, applicationId, jobId, recipientEmail, emailError.message, jobTitle, company);
-          
+          await logDeliveryFailure(supabase, userId, applicationId, jobId, actualRecipient, emailError.message, jobTitle, company);
           throw new Error(`Email delivery failed: ${emailError.message}`);
         }
 
         console.log("Email sent successfully:", emailData);
 
+        const deliveredLabel =
+          deliveryMode === "test"
+            ? `[TEST] ${actualRecipient} (would be ${originalRecipient})`
+            : actualRecipient;
+
         result = {
           success: true,
           method: "email",
-          message: `Application email sent to ${recipientEmail}`,
+          message: `Application email sent to ${deliveredLabel}`,
           emailSent: true,
           deliveryStatus: "sent",
           emailId: emailData?.id,
         };
 
-        // Update application status
         const { error: updateError } = await supabase
           .from("applications")
           .update({
             status: "submitted",
             applied_at: new Date().toISOString(),
             application_method: "email",
+            original_recipient: originalRecipient,
+            actual_recipient: actualRecipient,
+            delivery_mode: deliveryMode,
           })
           .eq("id", applicationId);
 
@@ -422,32 +436,40 @@ ${userName}`;
           console.error("Failed to update application:", updateError);
         }
 
-        // Log successful delivery
         await supabase.from("application_logs").insert({
           user_id: userId,
           application_id: applicationId,
           job_id: jobId,
           action: "auto_apply_email",
-          message: `✅ Email delivered to ${recipientEmail}`,
+          message:
+            deliveryMode === "test"
+              ? `🧪 TEST email delivered to ${actualRecipient} (intercepted from ${originalRecipient})`
+              : `✅ Email delivered to ${actualRecipient}`,
           level: "info",
-          details: { 
-            recipientEmail, 
+          details: {
+            originalRecipient,
+            actualRecipient,
+            deliveryMode,
             emailId: emailData?.id,
             deliveryStatus: "sent",
             senderEmail: SENDER_EMAIL,
           },
         });
 
-        // Create success notification
         await supabase.from("notifications").insert({
           user_id: userId,
           type: "application_sent",
-          title: "✅ Application Delivered!",
-          message: `Your application for ${jobTitle} at ${company} was emailed to ${recipientEmail}`,
-          data: { 
-            applicationId, 
-            jobId, 
-            recipientEmail, 
+          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered!",
+          message:
+            deliveryMode === "test"
+              ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
+              : `Your application for ${jobTitle} at ${company} was emailed to ${actualRecipient}`,
+          data: {
+            applicationId,
+            jobId,
+            originalRecipient,
+            actualRecipient,
+            deliveryMode,
             emailId: emailData?.id,
             deliveryStatus: "sent",
           },
