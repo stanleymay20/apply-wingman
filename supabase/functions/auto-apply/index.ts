@@ -392,6 +392,22 @@ ${userName}`;
 
       console.log(`Sending email from ${SENDER_EMAIL} to ${actualRecipient} (mode=${deliveryMode}, original=${originalRecipient})`);
 
+      // Mark as submitted (handed off to Resend) BEFORE we know delivery status
+      await transition(supabase, {
+        userId, applicationId, jobId, jobTitle, company,
+        status: "submitted",
+        action: "lifecycle_submitted",
+        level: "info",
+        message: `Handing off email to Resend → ${actualRecipient}`,
+        details: { originalRecipient, actualRecipient, deliveryMode, senderEmail: SENDER_EMAIL },
+        fields: {
+          application_method: "email",
+          original_recipient: originalRecipient,
+          actual_recipient: actualRecipient,
+          delivery_mode: deliveryMode,
+        },
+      });
+
       try {
         const { data: emailData, error: emailError } = await resend.emails.send({
           from: `${userName} via ${SENDER_NAME} <${SENDER_EMAIL}>`,
@@ -412,9 +428,29 @@ ${userName}`;
         });
 
         if (emailError) {
+          const retryable = isRetryableError(emailError.message);
           console.error("Resend API error:", emailError);
-          await logDeliveryFailure(supabase, userId, applicationId, jobId, actualRecipient, emailError.message, jobTitle, company);
-          throw new Error(`Email delivery failed: ${emailError.message}`);
+          await transition(supabase, {
+            userId, applicationId, jobId, jobTitle, company,
+            status: retryable ? "retrying" : "failed",
+            action: "lifecycle_email_failed",
+            level: "error",
+            message: `❌ Resend rejected email to ${actualRecipient}: ${emailError.message}`,
+            details: { originalRecipient, actualRecipient, deliveryMode, errorMessage: emailError.message, retryable, deliveryStatus: "failed" },
+            fields: { error_message: emailError.message },
+          });
+          await bumpFailedStats(supabase, userId);
+          await supabase.from("notifications").insert({
+            user_id: userId,
+            type: "application_failed",
+            title: "❌ Email Delivery Failed",
+            message: `Failed to send application for ${jobTitle} at ${company} to ${actualRecipient}. ${emailError.message}`,
+            data: { applicationId, jobId, recipientEmail: actualRecipient, errorMessage: emailError.message, retryable },
+          });
+          return new Response(
+            JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: emailError.message, retryable, deliveryStatus: "failed" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
 
         console.log("Email sent successfully:", emailData);
@@ -424,48 +460,19 @@ ${userName}`;
             ? `[TEST] ${actualRecipient} (would be ${originalRecipient})`
             : actualRecipient;
 
-        result = {
-          success: true,
-          method: "email",
-          message: `Application email sent to ${deliveredLabel}`,
-          emailSent: true,
-          deliveryStatus: "sent",
-          emailId: emailData?.id,
-        };
-
-        const { error: updateError } = await supabase
-          .from("applications")
-          .update({
-            status: "submitted",
-            applied_at: new Date().toISOString(),
-            application_method: "email",
-            original_recipient: originalRecipient,
-            actual_recipient: actualRecipient,
-            delivery_mode: deliveryMode,
-          })
-          .eq("id", applicationId);
-
-        if (updateError) {
-          console.error("Failed to update application:", updateError);
-        }
-
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: applicationId,
-          job_id: jobId,
-          action: "auto_apply_email",
+        // Resend accepted → mark delivered
+        await transition(supabase, {
+          userId, applicationId, jobId, jobTitle, company,
+          status: "delivered",
+          action: "lifecycle_delivered",
+          level: "info",
           message:
             deliveryMode === "test"
               ? `🧪 TEST email delivered to ${actualRecipient} (intercepted from ${originalRecipient})`
               : `✅ Email delivered to ${actualRecipient}`,
-          level: "info",
-          details: {
-            originalRecipient,
-            actualRecipient,
-            deliveryMode,
-            emailId: emailData?.id,
-            deliveryStatus: "sent",
-            senderEmail: SENDER_EMAIL,
+          details: { originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent", senderEmail: SENDER_EMAIL },
+          fields: {
+            applied_at: new Date().toISOString(),
           },
         });
 
@@ -477,27 +484,36 @@ ${userName}`;
             deliveryMode === "test"
               ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
               : `Your application for ${jobTitle} at ${company} was emailed to ${actualRecipient}`,
-          data: {
-            applicationId,
-            jobId,
-            originalRecipient,
-            actualRecipient,
-            deliveryMode,
-            emailId: emailData?.id,
-            deliveryStatus: "sent",
-          },
+          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent" },
         });
+
+        result = {
+          success: true,
+          method: "email",
+          message: `Application email sent to ${deliveredLabel}`,
+          emailSent: true,
+          deliveryStatus: "sent",
+          emailId: emailData?.id,
+        };
 
       } catch (sendError) {
         const errorMessage = sendError instanceof Error ? sendError.message : "Unknown email error";
-        console.error("Email send failed:", errorMessage);
-        
-        // Already logged in logDeliveryFailure if it was a Resend error
-        if (!errorMessage.includes("Email delivery failed")) {
-          await logDeliveryFailure(supabase, userId, applicationId, jobId, recipientEmail, errorMessage, jobTitle, company);
-        }
-        
-        throw sendError;
+        const retryable = isRetryableError(errorMessage);
+        console.error("Email send failed (network/exception):", errorMessage);
+        await transition(supabase, {
+          userId, applicationId, jobId, jobTitle, company,
+          status: retryable ? "retrying" : "failed",
+          action: "lifecycle_email_exception",
+          level: "error",
+          message: `❌ Email send threw exception: ${errorMessage}`,
+          details: { originalRecipient, actualRecipient, errorMessage, retryable, deliveryStatus: "failed" },
+          fields: { error_message: errorMessage },
+        });
+        await bumpFailedStats(supabase, userId);
+        return new Response(
+          JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: errorMessage, retryable, deliveryStatus: "failed" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
     // Method 2: ATS API Integration (Greenhouse, Lever)
