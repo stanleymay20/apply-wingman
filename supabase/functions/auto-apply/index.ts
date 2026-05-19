@@ -629,14 +629,42 @@ ${userName}`;
   } catch (error) {
     console.error("Auto-apply error:", error);
     const errorMessage = error instanceof Error ? error.message : "Auto-apply failed";
-    
+    const retryable = isRetryableError(errorMessage);
+
+    // No silent failures — always transition the application
+    try {
+      const body = await req.clone().json().catch(() => ({} as any));
+      if (body?.applicationId) {
+        await supabase
+          .from("applications")
+          .update({
+            status: retryable ? "retrying" : "failed",
+            error_message: errorMessage,
+          })
+          .eq("id", body.applicationId);
+        await supabase.from("application_logs").insert({
+          user_id: userId,
+          application_id: body.applicationId,
+          job_id: body.jobId ?? null,
+          action: "lifecycle_unhandled_error",
+          level: "error",
+          message: `❌ Unhandled auto-apply error: ${errorMessage}`,
+          details: { errorMessage, retryable },
+        });
+      }
+    } catch (logErr) {
+      console.error("Failed to log unhandled error:", logErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
+        status: retryable ? "retrying" : "failed",
         error: errorMessage,
+        retryable,
         deliveryStatus: "failed",
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
