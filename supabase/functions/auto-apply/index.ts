@@ -225,7 +225,7 @@ serve(async (req) => {
           job_id: jobId,
           action: "auto_apply_rate_limited",
           message: errorMsg,
-          level: "warn",
+          level: "warning",
           details: { limit: MAX_DAILY_APPLICATIONS, current: todayCount },
         });
 
@@ -235,6 +235,21 @@ serve(async (req) => {
         );
       }
     }
+
+    // ===== LIFECYCLE: queued → preparing → (submitted → delivered) | manual_action_required | failed | retrying =====
+    await transition(supabase, {
+      userId, applicationId, jobId, jobTitle, company,
+      status: "queued", action: "lifecycle_queued", level: "info",
+      message: `Queued ${jobTitle} at ${company} for ${method} apply`,
+      details: { method, sourcePlatform },
+    });
+
+    await transition(supabase, {
+      userId, applicationId, jobId, jobTitle, company,
+      status: "preparing", action: "lifecycle_preparing", level: "info",
+      message: `Preparing ${method} application payload`,
+      details: { method },
+    });
 
     let result: ApplyResult;
 
@@ -271,31 +286,29 @@ serve(async (req) => {
       if (deliveryMode === "disabled") {
         const msg = `Delivery is disabled in user settings. Email NOT sent to ${recipientEmail}.`;
         console.warn(msg);
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: applicationId,
-          job_id: jobId,
+        await transition(supabase, {
+          userId, applicationId, jobId, jobTitle, company,
+          status: "manual_action_required",
           action: "auto_apply_email_blocked",
+          level: "warning",
           message: msg,
-          level: "warn",
           details: { originalRecipient, deliveryMode },
-        });
-        await supabase
-          .from("applications")
-          .update({
-            status: "manual_action_required",
+          fields: {
             original_recipient: originalRecipient,
             actual_recipient: null,
             delivery_mode: deliveryMode,
             error_message: "Delivery disabled in settings",
-          })
-          .eq("id", applicationId);
+            application_method: "email",
+          },
+        });
         return new Response(
           JSON.stringify({
             success: false,
+            status: "manual_action_required",
             message: msg,
             deliveryMode,
             originalRecipient,
+            retryable: false,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -379,6 +392,22 @@ ${userName}`;
 
       console.log(`Sending email from ${SENDER_EMAIL} to ${actualRecipient} (mode=${deliveryMode}, original=${originalRecipient})`);
 
+      // Mark as submitted (handed off to Resend) BEFORE we know delivery status
+      await transition(supabase, {
+        userId, applicationId, jobId, jobTitle, company,
+        status: "submitted",
+        action: "lifecycle_submitted",
+        level: "info",
+        message: `Handing off email to Resend → ${actualRecipient}`,
+        details: { originalRecipient, actualRecipient, deliveryMode, senderEmail: SENDER_EMAIL },
+        fields: {
+          application_method: "email",
+          original_recipient: originalRecipient,
+          actual_recipient: actualRecipient,
+          delivery_mode: deliveryMode,
+        },
+      });
+
       try {
         const { data: emailData, error: emailError } = await resend.emails.send({
           from: `${userName} via ${SENDER_NAME} <${SENDER_EMAIL}>`,
@@ -399,9 +428,29 @@ ${userName}`;
         });
 
         if (emailError) {
+          const retryable = isRetryableError(emailError.message);
           console.error("Resend API error:", emailError);
-          await logDeliveryFailure(supabase, userId, applicationId, jobId, actualRecipient, emailError.message, jobTitle, company);
-          throw new Error(`Email delivery failed: ${emailError.message}`);
+          await transition(supabase, {
+            userId, applicationId, jobId, jobTitle, company,
+            status: retryable ? "retrying" : "failed",
+            action: "lifecycle_email_failed",
+            level: "error",
+            message: `❌ Resend rejected email to ${actualRecipient}: ${emailError.message}`,
+            details: { originalRecipient, actualRecipient, deliveryMode, errorMessage: emailError.message, retryable, deliveryStatus: "failed" },
+            fields: { error_message: emailError.message },
+          });
+          await bumpFailedStats(supabase, userId);
+          await supabase.from("notifications").insert({
+            user_id: userId,
+            type: "application_failed",
+            title: "❌ Email Delivery Failed",
+            message: `Failed to send application for ${jobTitle} at ${company} to ${actualRecipient}. ${emailError.message}`,
+            data: { applicationId, jobId, recipientEmail: actualRecipient, errorMessage: emailError.message, retryable },
+          });
+          return new Response(
+            JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: emailError.message, retryable, deliveryStatus: "failed" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
 
         console.log("Email sent successfully:", emailData);
@@ -411,48 +460,19 @@ ${userName}`;
             ? `[TEST] ${actualRecipient} (would be ${originalRecipient})`
             : actualRecipient;
 
-        result = {
-          success: true,
-          method: "email",
-          message: `Application email sent to ${deliveredLabel}`,
-          emailSent: true,
-          deliveryStatus: "sent",
-          emailId: emailData?.id,
-        };
-
-        const { error: updateError } = await supabase
-          .from("applications")
-          .update({
-            status: "submitted",
-            applied_at: new Date().toISOString(),
-            application_method: "email",
-            original_recipient: originalRecipient,
-            actual_recipient: actualRecipient,
-            delivery_mode: deliveryMode,
-          })
-          .eq("id", applicationId);
-
-        if (updateError) {
-          console.error("Failed to update application:", updateError);
-        }
-
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: applicationId,
-          job_id: jobId,
-          action: "auto_apply_email",
+        // Resend accepted → mark delivered
+        await transition(supabase, {
+          userId, applicationId, jobId, jobTitle, company,
+          status: "delivered",
+          action: "lifecycle_delivered",
+          level: "info",
           message:
             deliveryMode === "test"
               ? `🧪 TEST email delivered to ${actualRecipient} (intercepted from ${originalRecipient})`
               : `✅ Email delivered to ${actualRecipient}`,
-          level: "info",
-          details: {
-            originalRecipient,
-            actualRecipient,
-            deliveryMode,
-            emailId: emailData?.id,
-            deliveryStatus: "sent",
-            senderEmail: SENDER_EMAIL,
+          details: { originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent", senderEmail: SENDER_EMAIL },
+          fields: {
+            applied_at: new Date().toISOString(),
           },
         });
 
@@ -464,27 +484,36 @@ ${userName}`;
             deliveryMode === "test"
               ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
               : `Your application for ${jobTitle} at ${company} was emailed to ${actualRecipient}`,
-          data: {
-            applicationId,
-            jobId,
-            originalRecipient,
-            actualRecipient,
-            deliveryMode,
-            emailId: emailData?.id,
-            deliveryStatus: "sent",
-          },
+          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent" },
         });
+
+        result = {
+          success: true,
+          method: "email",
+          message: `Application email sent to ${deliveredLabel}`,
+          emailSent: true,
+          deliveryStatus: "sent",
+          emailId: emailData?.id,
+        };
 
       } catch (sendError) {
         const errorMessage = sendError instanceof Error ? sendError.message : "Unknown email error";
-        console.error("Email send failed:", errorMessage);
-        
-        // Already logged in logDeliveryFailure if it was a Resend error
-        if (!errorMessage.includes("Email delivery failed")) {
-          await logDeliveryFailure(supabase, userId, applicationId, jobId, recipientEmail, errorMessage, jobTitle, company);
-        }
-        
-        throw sendError;
+        const retryable = isRetryableError(errorMessage);
+        console.error("Email send failed (network/exception):", errorMessage);
+        await transition(supabase, {
+          userId, applicationId, jobId, jobTitle, company,
+          status: retryable ? "retrying" : "failed",
+          action: "lifecycle_email_exception",
+          level: "error",
+          message: `❌ Email send threw exception: ${errorMessage}`,
+          details: { originalRecipient, actualRecipient, errorMessage, retryable, deliveryStatus: "failed" },
+          fields: { error_message: errorMessage },
+        });
+        await bumpFailedStats(supabase, userId);
+        return new Response(
+          JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: errorMessage, retryable, deliveryStatus: "failed" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
     // Method 2: ATS API Integration (Greenhouse, Lever)
@@ -554,14 +583,21 @@ ${userName}`;
         };
       }
 
-      // Update application with pending status
-      await supabase
-        .from("applications")
-        .update({
-          status: result.apiSubmitted ? "submitted" : "pending",
-          application_method: "ats_api",
-        })
-        .eq("id", applicationId);
+      // ATS path never confirms true submission server-side → user must finish in-browser
+      const finalStatus = result.apiSubmitted ? "delivered" : "manual_action_required";
+      await transition(supabase, {
+        userId, applicationId, jobId, jobTitle, company,
+        status: finalStatus,
+        action: "lifecycle_ats_handoff",
+        level: "info",
+        message: result.apiSubmitted
+          ? `✅ ATS submission confirmed: ${result.message}`
+          : `📝 Action needed — open ${result.applicationUrl || sourceUrl} to finish the ATS form`,
+        details: { applicationUrl: result.applicationUrl, sourcePlatform, apiSubmitted: result.apiSubmitted },
+        fields: { application_method: "ats_api" },
+      });
+      // Annotate result so the client knows this isn't a true success
+      result.message = `${result.message} (status: ${finalStatus})`;
     }
     // Method 3: Assisted Apply
     else if (method === "assisted") {
@@ -572,14 +608,17 @@ ${userName}`;
         applicationUrl: sourceUrl,
       };
 
-      // Mark as pending (user will confirm when done)
-      await supabase
-        .from("applications")
-        .update({
-          status: "pending",
-          application_method: "assisted",
-        })
-        .eq("id", applicationId);
+      // Assisted apply requires manual user action → never auto-success
+      await transition(supabase, {
+        userId, applicationId, jobId, jobTitle, company,
+        status: "manual_action_required",
+        action: "lifecycle_assisted_handoff",
+        level: "info",
+        message: `📝 Assisted apply prepared — open ${sourceUrl} and submit manually`,
+        details: { applicationUrl: sourceUrl, sourcePlatform },
+        fields: { application_method: "manual" },
+      });
+      result.message = `${result.message} (status: manual_action_required)`;
     } else {
       throw new Error(`Unknown apply method: ${method}`);
     }
@@ -590,14 +629,42 @@ ${userName}`;
   } catch (error) {
     console.error("Auto-apply error:", error);
     const errorMessage = error instanceof Error ? error.message : "Auto-apply failed";
-    
+    const retryable = isRetryableError(errorMessage);
+
+    // No silent failures — always transition the application
+    try {
+      const body = await req.clone().json().catch(() => ({} as any));
+      if (body?.applicationId) {
+        await supabase
+          .from("applications")
+          .update({
+            status: retryable ? "retrying" : "failed",
+            error_message: errorMessage,
+          })
+          .eq("id", body.applicationId);
+        await supabase.from("application_logs").insert({
+          user_id: userId,
+          application_id: body.applicationId,
+          job_id: body.jobId ?? null,
+          action: "lifecycle_unhandled_error",
+          level: "error",
+          message: `❌ Unhandled auto-apply error: ${errorMessage}`,
+          details: { errorMessage, retryable },
+        });
+      }
+    } catch (logErr) {
+      console.error("Failed to log unhandled error:", logErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
+        status: retryable ? "retrying" : "failed",
         error: errorMessage,
+        retryable,
         deliveryStatus: "failed",
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
@@ -622,71 +689,20 @@ async function logError(
   });
 }
 
-// Helper function to log delivery failures with notification
-async function logDeliveryFailure(
-  supabase: any,
-  userId: string,
-  applicationId: string,
-  jobId: string,
-  recipientEmail: string,
-  errorMessage: string,
-  jobTitle: string,
-  company: string
-) {
-  // Update application with error
-  await supabase
-    .from("applications")
-    .update({
-      status: "failed",
-      error_message: errorMessage,
-    })
-    .eq("id", applicationId);
-
-  // Log the failure
-  await supabase.from("application_logs").insert({
-    user_id: userId,
-    application_id: applicationId,
-    job_id: jobId,
-    action: "auto_apply_email_failed",
-    message: `❌ Email delivery failed to ${recipientEmail}: ${errorMessage}`,
-    level: "error",
-    details: { 
-      recipientEmail, 
-      errorMessage,
-      deliveryStatus: "failed",
-    },
-  });
-
-  // Create failure notification
-  await supabase.from("notifications").insert({
-    user_id: userId,
-    type: "application_failed",
-    title: "❌ Email Delivery Failed",
-    message: `Failed to send application for ${jobTitle} at ${company} to ${recipientEmail}. Error: ${errorMessage}`,
-    data: { 
-      applicationId, 
-      jobId, 
-      recipientEmail, 
-      errorMessage,
-      deliveryStatus: "failed",
-    },
-  });
-
-  // Increment error count in daily stats
+// Bump failed counter in daily_stats
+async function bumpFailedStats(supabase: any, userId: string) {
   const today = new Date().toISOString().split("T")[0];
   const { data: existingStats } = await supabase
     .from("daily_stats")
     .select("*")
     .eq("user_id", userId)
     .eq("date", today)
-    .single();
+    .maybeSingle();
 
   if (existingStats) {
     await supabase
       .from("daily_stats")
-      .update({
-        applications_failed: (existingStats.applications_failed || 0) + 1,
-      })
+      .update({ applications_failed: (existingStats.applications_failed || 0) + 1 })
       .eq("id", existingStats.id);
   } else {
     await supabase.from("daily_stats").insert({
@@ -695,4 +711,70 @@ async function logDeliveryFailure(
       applications_failed: 1,
     });
   }
+}
+
+// Classify error → retryable? (network, timeout, 429, 5xx) vs terminal (invalid recipient, auth)
+function isRetryableError(message: string): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  const terminalPatterns = [
+    "invalid", "not found", "unauthorized", "forbidden", "missing", "validation",
+    "bad request", "401", "403", "404", "domain is not verified", "recipient",
+  ];
+  if (terminalPatterns.some((p) => m.includes(p))) return false;
+  const retryablePatterns = [
+    "timeout", "timed out", "network", "fetch failed", "econn", "rate limit",
+    "too many requests", "429", "500", "502", "503", "504", "temporarily",
+  ];
+  return retryablePatterns.some((p) => m.includes(p));
+}
+
+// Atomic-ish lifecycle transition: update applications row + write audit log
+async function transition(
+  supabase: any,
+  params: {
+    userId: string;
+    applicationId: string;
+    jobId: string;
+    jobTitle: string;
+    company: string;
+    status: string;
+    action: string;
+    level: "info" | "warning" | "error";
+    message: string;
+    details?: Record<string, unknown>;
+    fields?: Record<string, unknown>;
+  }
+) {
+  const { userId, applicationId, jobId, status, action, level, message, details = {}, fields = {} } = params;
+
+  const update: Record<string, unknown> = { status, ...fields };
+  const { error: updateError } = await supabase
+    .from("applications")
+    .update(update)
+    .eq("id", applicationId);
+
+  if (updateError) {
+    console.error(`[transition→${status}] Failed to update application ${applicationId}:`, updateError);
+    await supabase.from("application_logs").insert({
+      user_id: userId,
+      application_id: applicationId,
+      job_id: jobId,
+      action: "lifecycle_update_failed",
+      level: "error",
+      message: `Failed to write status=${status}: ${updateError.message}`,
+      details: { attemptedStatus: status, updateError: updateError.message, ...details },
+    });
+    return;
+  }
+
+  await supabase.from("application_logs").insert({
+    user_id: userId,
+    application_id: applicationId,
+    job_id: jobId,
+    action,
+    level,
+    message,
+    details: { status, ...details },
+  });
 }
