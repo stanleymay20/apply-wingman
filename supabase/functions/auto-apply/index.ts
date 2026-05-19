@@ -583,14 +583,21 @@ ${userName}`;
         };
       }
 
-      // Update application with pending status
-      await supabase
-        .from("applications")
-        .update({
-          status: result.apiSubmitted ? "submitted" : "pending",
-          application_method: "ats_api",
-        })
-        .eq("id", applicationId);
+      // ATS path never confirms true submission server-side → user must finish in-browser
+      const finalStatus = result.apiSubmitted ? "delivered" : "manual_action_required";
+      await transition(supabase, {
+        userId, applicationId, jobId, jobTitle, company,
+        status: finalStatus,
+        action: "lifecycle_ats_handoff",
+        level: "info",
+        message: result.apiSubmitted
+          ? `✅ ATS submission confirmed: ${result.message}`
+          : `📝 Action needed — open ${result.applicationUrl || sourceUrl} to finish the ATS form`,
+        details: { applicationUrl: result.applicationUrl, sourcePlatform, apiSubmitted: result.apiSubmitted },
+        fields: { application_method: "ats_api" },
+      });
+      // Annotate result so the client knows this isn't a true success
+      result.message = `${result.message} (status: ${finalStatus})`;
     }
     // Method 3: Assisted Apply
     else if (method === "assisted") {
@@ -601,14 +608,17 @@ ${userName}`;
         applicationUrl: sourceUrl,
       };
 
-      // Mark as pending (user will confirm when done)
-      await supabase
-        .from("applications")
-        .update({
-          status: "pending",
-          application_method: "assisted",
-        })
-        .eq("id", applicationId);
+      // Assisted apply requires manual user action → never auto-success
+      await transition(supabase, {
+        userId, applicationId, jobId, jobTitle, company,
+        status: "manual_action_required",
+        action: "lifecycle_assisted_handoff",
+        level: "info",
+        message: `📝 Assisted apply prepared — open ${sourceUrl} and submit manually`,
+        details: { applicationUrl: sourceUrl, sourcePlatform },
+        fields: { application_method: "manual" },
+      });
+      result.message = `${result.message} (status: manual_action_required)`;
     } else {
       throw new Error(`Unknown apply method: ${method}`);
     }
