@@ -225,7 +225,7 @@ serve(async (req) => {
           job_id: jobId,
           action: "auto_apply_rate_limited",
           message: errorMsg,
-          level: "warn",
+          level: "warning",
           details: { limit: MAX_DAILY_APPLICATIONS, current: todayCount },
         });
 
@@ -290,7 +290,7 @@ serve(async (req) => {
           userId, applicationId, jobId, jobTitle, company,
           status: "manual_action_required",
           action: "auto_apply_email_blocked",
-          level: "warn",
+          level: "warning",
           message: msg,
           details: { originalRecipient, deliveryMode },
           fields: {
@@ -740,7 +740,7 @@ async function transition(
     company: string;
     status: string;
     action: string;
-    level: "info" | "warn" | "error";
+    level: "info" | "warning" | "error";
     message: string;
     details?: Record<string, unknown>;
     fields?: Record<string, unknown>;
