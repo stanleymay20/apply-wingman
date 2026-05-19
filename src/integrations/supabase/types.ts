@@ -618,6 +618,7 @@ export type Database = {
         Row: {
           automation_status: string | null
           bulk_apply_mode: string | null
+          company_cooldown_days: number
           created_at: string | null
           daily_application_cap: number | null
           delivery_mode: string
@@ -628,6 +629,7 @@ export type Database = {
           job_details_view: string | null
           location: string | null
           manual_approval_mode: boolean | null
+          max_apps_per_company: number
           minimum_fit_score: number | null
           notifications_enabled: boolean | null
           phone: string | null
@@ -642,6 +644,7 @@ export type Database = {
         Insert: {
           automation_status?: string | null
           bulk_apply_mode?: string | null
+          company_cooldown_days?: number
           created_at?: string | null
           daily_application_cap?: number | null
           delivery_mode?: string
@@ -652,6 +655,7 @@ export type Database = {
           job_details_view?: string | null
           location?: string | null
           manual_approval_mode?: boolean | null
+          max_apps_per_company?: number
           minimum_fit_score?: number | null
           notifications_enabled?: boolean | null
           phone?: string | null
@@ -666,6 +670,7 @@ export type Database = {
         Update: {
           automation_status?: string | null
           bulk_apply_mode?: string | null
+          company_cooldown_days?: number
           created_at?: string | null
           daily_application_cap?: number | null
           delivery_mode?: string
@@ -676,6 +681,7 @@ export type Database = {
           job_details_view?: string | null
           location?: string | null
           manual_approval_mode?: boolean | null
+          max_apps_per_company?: number
           minimum_fit_score?: number | null
           notifications_enabled?: boolean | null
           phone?: string | null
@@ -811,6 +817,10 @@ export type Database = {
     Functions: {
       get_today_application_count: {
         Args: { p_user_id: string }
+        Returns: number
+      }
+      recent_applications_to_company: {
+        Args: { p_company: string; p_days?: number; p_user_id: string }
         Returns: number
       }
     }
