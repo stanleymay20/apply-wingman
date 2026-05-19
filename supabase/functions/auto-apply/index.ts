@@ -286,31 +286,29 @@ serve(async (req) => {
       if (deliveryMode === "disabled") {
         const msg = `Delivery is disabled in user settings. Email NOT sent to ${recipientEmail}.`;
         console.warn(msg);
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: applicationId,
-          job_id: jobId,
+        await transition(supabase, {
+          userId, applicationId, jobId, jobTitle, company,
+          status: "manual_action_required",
           action: "auto_apply_email_blocked",
-          message: msg,
           level: "warn",
+          message: msg,
           details: { originalRecipient, deliveryMode },
-        });
-        await supabase
-          .from("applications")
-          .update({
-            status: "manual_action_required",
+          fields: {
             original_recipient: originalRecipient,
             actual_recipient: null,
             delivery_mode: deliveryMode,
             error_message: "Delivery disabled in settings",
-          })
-          .eq("id", applicationId);
+            application_method: "email",
+          },
+        });
         return new Response(
           JSON.stringify({
             success: false,
+            status: "manual_action_required",
             message: msg,
             deliveryMode,
             originalRecipient,
+            retryable: false,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
