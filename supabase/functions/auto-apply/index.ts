@@ -689,71 +689,20 @@ async function logError(
   });
 }
 
-// Helper function to log delivery failures with notification
-async function logDeliveryFailure(
-  supabase: any,
-  userId: string,
-  applicationId: string,
-  jobId: string,
-  recipientEmail: string,
-  errorMessage: string,
-  jobTitle: string,
-  company: string
-) {
-  // Update application with error
-  await supabase
-    .from("applications")
-    .update({
-      status: "failed",
-      error_message: errorMessage,
-    })
-    .eq("id", applicationId);
-
-  // Log the failure
-  await supabase.from("application_logs").insert({
-    user_id: userId,
-    application_id: applicationId,
-    job_id: jobId,
-    action: "auto_apply_email_failed",
-    message: `❌ Email delivery failed to ${recipientEmail}: ${errorMessage}`,
-    level: "error",
-    details: { 
-      recipientEmail, 
-      errorMessage,
-      deliveryStatus: "failed",
-    },
-  });
-
-  // Create failure notification
-  await supabase.from("notifications").insert({
-    user_id: userId,
-    type: "application_failed",
-    title: "❌ Email Delivery Failed",
-    message: `Failed to send application for ${jobTitle} at ${company} to ${recipientEmail}. Error: ${errorMessage}`,
-    data: { 
-      applicationId, 
-      jobId, 
-      recipientEmail, 
-      errorMessage,
-      deliveryStatus: "failed",
-    },
-  });
-
-  // Increment error count in daily stats
+// Bump failed counter in daily_stats
+async function bumpFailedStats(supabase: any, userId: string) {
   const today = new Date().toISOString().split("T")[0];
   const { data: existingStats } = await supabase
     .from("daily_stats")
     .select("*")
     .eq("user_id", userId)
     .eq("date", today)
-    .single();
+    .maybeSingle();
 
   if (existingStats) {
     await supabase
       .from("daily_stats")
-      .update({
-        applications_failed: (existingStats.applications_failed || 0) + 1,
-      })
+      .update({ applications_failed: (existingStats.applications_failed || 0) + 1 })
       .eq("id", existingStats.id);
   } else {
     await supabase.from("daily_stats").insert({
@@ -762,4 +711,70 @@ async function logDeliveryFailure(
       applications_failed: 1,
     });
   }
+}
+
+// Classify error → retryable? (network, timeout, 429, 5xx) vs terminal (invalid recipient, auth)
+function isRetryableError(message: string): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  const terminalPatterns = [
+    "invalid", "not found", "unauthorized", "forbidden", "missing", "validation",
+    "bad request", "401", "403", "404", "domain is not verified", "recipient",
+  ];
+  if (terminalPatterns.some((p) => m.includes(p))) return false;
+  const retryablePatterns = [
+    "timeout", "timed out", "network", "fetch failed", "econn", "rate limit",
+    "too many requests", "429", "500", "502", "503", "504", "temporarily",
+  ];
+  return retryablePatterns.some((p) => m.includes(p));
+}
+
+// Atomic-ish lifecycle transition: update applications row + write audit log
+async function transition(
+  supabase: any,
+  params: {
+    userId: string;
+    applicationId: string;
+    jobId: string;
+    jobTitle: string;
+    company: string;
+    status: string;
+    action: string;
+    level: "info" | "warn" | "error";
+    message: string;
+    details?: Record<string, unknown>;
+    fields?: Record<string, unknown>;
+  }
+) {
+  const { userId, applicationId, jobId, status, action, level, message, details = {}, fields = {} } = params;
+
+  const update: Record<string, unknown> = { status, ...fields };
+  const { error: updateError } = await supabase
+    .from("applications")
+    .update(update)
+    .eq("id", applicationId);
+
+  if (updateError) {
+    console.error(`[transition→${status}] Failed to update application ${applicationId}:`, updateError);
+    await supabase.from("application_logs").insert({
+      user_id: userId,
+      application_id: applicationId,
+      job_id: jobId,
+      action: "lifecycle_update_failed",
+      level: "error",
+      message: `Failed to write status=${status}: ${updateError.message}`,
+      details: { attemptedStatus: status, updateError: updateError.message, ...details },
+    });
+    return;
+  }
+
+  await supabase.from("application_logs").insert({
+    user_id: userId,
+    application_id: applicationId,
+    job_id: jobId,
+    action,
+    level,
+    message,
+    details: { status, ...details },
+  });
 }
