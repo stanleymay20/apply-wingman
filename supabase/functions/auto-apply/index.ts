@@ -236,6 +236,21 @@ serve(async (req) => {
       }
     }
 
+    // ===== LIFECYCLE: queued → preparing → (submitted → delivered) | manual_action_required | failed | retrying =====
+    await transition(supabase, {
+      userId, applicationId, jobId, jobTitle, company,
+      status: "queued", action: "lifecycle_queued", level: "info",
+      message: `Queued ${jobTitle} at ${company} for ${method} apply`,
+      details: { method, sourcePlatform },
+    });
+
+    await transition(supabase, {
+      userId, applicationId, jobId, jobTitle, company,
+      status: "preparing", action: "lifecycle_preparing", level: "info",
+      message: `Preparing ${method} application payload`,
+      details: { method },
+    });
+
     let result: ApplyResult;
 
     // Method 1: Email Application
