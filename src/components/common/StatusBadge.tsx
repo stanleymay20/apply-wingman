@@ -1,18 +1,24 @@
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-type Status = 
-  | "applied" 
-  | "submitted" 
-  | "interview" 
-  | "rejected" 
-  | "pending" 
-  | "offer" 
+type Status =
+  | "applied"
+  | "submitted"
+  | "interview"
+  | "rejected"
+  | "pending"
+  | "offer"
   | "withdrawn"
   | "in_progress"
   | "failed"
   | "matched"
-  | "new";
+  | "new"
+  | "queued"
+  | "preparing"
+  | "delivered"
+  | "responded"
+  | "retrying"
+  | "manual_action_required";
 
 interface StatusBadgeProps {
   status: Status | string;
@@ -20,50 +26,23 @@ interface StatusBadgeProps {
 }
 
 const statusConfig: Record<string, { label: string; className: string }> = {
-  applied: {
-    label: "Applied",
-    className: "bg-info/20 text-info border border-info/30",
-  },
-  submitted: {
-    label: "Submitted",
-    className: "bg-info/20 text-info border border-info/30",
-  },
-  interview: {
-    label: "Interview",
-    className: "bg-success/20 text-success border border-success/30",
-  },
-  rejected: {
-    label: "Rejected",
-    className: "bg-destructive/20 text-destructive border border-destructive/30",
-  },
-  pending: {
-    label: "Pending",
-    className: "bg-warning/20 text-warning border border-warning/30",
-  },
-  offer: {
-    label: "Offer",
-    className: "bg-gradient-to-r from-primary/20 to-success/20 text-success border border-success/30",
-  },
-  withdrawn: {
-    label: "Withdrawn",
-    className: "bg-muted text-muted-foreground border border-border",
-  },
-  in_progress: {
-    label: "In Progress",
-    className: "bg-primary/20 text-primary border border-primary/30",
-  },
-  failed: {
-    label: "Failed",
-    className: "bg-destructive/20 text-destructive border border-destructive/30",
-  },
-  matched: {
-    label: "Matched",
-    className: "bg-primary/20 text-primary border border-primary/30",
-  },
-  new: {
-    label: "New",
-    className: "bg-info/20 text-info border border-info/30",
-  },
+  applied: { label: "Applied", className: "bg-info/20 text-info border border-info/30" },
+  submitted: { label: "Submitted", className: "bg-info/20 text-info border border-info/30" },
+  interview: { label: "Interview", className: "bg-success/20 text-success border border-success/30" },
+  rejected: { label: "Rejected", className: "bg-destructive/20 text-destructive border border-destructive/30" },
+  pending: { label: "Pending", className: "bg-warning/20 text-warning border border-warning/30" },
+  offer: { label: "Offer", className: "bg-gradient-to-r from-primary/20 to-success/20 text-success border border-success/30" },
+  withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground border border-border" },
+  in_progress: { label: "In Progress", className: "bg-primary/20 text-primary border border-primary/30" },
+  failed: { label: "Failed", className: "bg-destructive/20 text-destructive border border-destructive/30" },
+  matched: { label: "Matched", className: "bg-primary/20 text-primary border border-primary/30" },
+  new: { label: "New", className: "bg-info/20 text-info border border-info/30" },
+  queued: { label: "Queued", className: "bg-muted text-muted-foreground border border-border" },
+  preparing: { label: "Preparing", className: "bg-warning/20 text-warning border border-warning/30" },
+  delivered: { label: "Delivered", className: "bg-success/20 text-success border border-success/30" },
+  responded: { label: "Responded", className: "bg-success/20 text-success border border-success/30" },
+  retrying: { label: "Retrying", className: "bg-warning/20 text-warning border border-warning/30" },
+  manual_action_required: { label: "Action Needed", className: "bg-destructive/20 text-destructive border border-destructive/30" },
 };
 
 const defaultConfig = {

@@ -11,13 +11,19 @@ export type JobStatus =
   | "expired" 
   | "blacklisted";
 
-export type ApplicationStatus = 
-  | "pending" 
-  | "submitted" 
-  | "failed" 
-  | "interview" 
-  | "rejected" 
-  | "offer" 
+export type ApplicationStatus =
+  | "pending"
+  | "queued"
+  | "preparing"
+  | "submitted"
+  | "delivered"
+  | "responded"
+  | "failed"
+  | "retrying"
+  | "manual_action_required"
+  | "interview"
+  | "rejected"
+  | "offer"
   | "withdrawn";
 
 export type ApplicationMethod = 
@@ -77,6 +83,8 @@ export interface Profile {
   job_details_view: string;
   delivery_mode: 'test' | 'production' | 'disabled';
   test_email_override: string | null;
+  company_cooldown_days: number;
+  max_apps_per_company: number;
   created_at: string;
   updated_at: string;
 }

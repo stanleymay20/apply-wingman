@@ -168,12 +168,18 @@ export default function Applications() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="queued">Queued</SelectItem>
+              <SelectItem value="preparing">Preparing</SelectItem>
               <SelectItem value="submitted">Submitted</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="responded">Responded</SelectItem>
               <SelectItem value="interview">Interview</SelectItem>
+              <SelectItem value="offer">Offer</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="retrying">Retrying</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
-              <SelectItem value="offer">Offer</SelectItem>
+              <SelectItem value="manual_action_required">Action Needed</SelectItem>
             </SelectContent>
           </Select>
 
