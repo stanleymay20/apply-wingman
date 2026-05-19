@@ -20,7 +20,7 @@ serve(async (req) => {
   try {
     const { data: activeUsers, error: usersError } = await supabase
       .from("profiles")
-      .select("id, email, full_name, automation_status, minimum_fit_score, daily_application_cap")
+      .select("id, email, full_name, automation_status, minimum_fit_score, daily_application_cap, company_cooldown_days, max_apps_per_company")
       .eq("automation_status", "running");
 
     if (usersError) throw usersError;
@@ -153,6 +153,27 @@ serve(async (req) => {
 
                       const minScore = user.minimum_fit_score || 70;
                       if (score >= minScore && userResult.applicationsAttempted < remainingCap) {
+                        // ===== Recruiter Safety: per-company cooldown =====
+                        const cooldownDays = (user as any).company_cooldown_days ?? 30;
+                        const maxPerCompany = (user as any).max_apps_per_company ?? 1;
+                        const { data: recentCount } = await supabase.rpc(
+                          "recent_applications_to_company",
+                          { p_user_id: user.id, p_company: job.company, p_days: cooldownDays }
+                        );
+                        if ((recentCount ?? 0) >= maxPerCompany) {
+                          console.log(`⏸  Cooldown active for ${job.company} (${recentCount}/${maxPerCompany} in last ${cooldownDays}d) — skipping`);
+                          await supabase.from("application_logs").insert({
+                            user_id: user.id,
+                            job_id: job.id,
+                            action: "cooldown_skipped",
+                            level: "info",
+                            message: `Skipped ${job.title} at ${job.company} — company cooldown active (${recentCount}/${maxPerCompany} in ${cooldownDays}d)`,
+                            details: { company: job.company, recentCount, maxPerCompany, cooldownDays },
+                          });
+                          continue;
+                        }
+                        // ===== End cooldown check =====
+
                         // Create application record
                         const { data: app } = await supabase
                           .from("applications")
