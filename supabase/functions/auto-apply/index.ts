@@ -469,7 +469,25 @@ ${userName}`;
             ? `[TEST] ${actualRecipient} (would be ${originalRecipient})`
             : actualRecipient;
 
-        // Resend accepted → mark delivered
+        // Resend accepted → mark delivered (with provider id as proof)
+        const providerMessageId = emailData?.id ?? null;
+        if (!providerMessageId) {
+          // Defensive: Resend returned no id but no error — treat as unverified.
+          await transition(supabase, {
+            userId, applicationId, jobId, jobTitle, company,
+            status: "submitted",
+            action: "lifecycle_unverified",
+            level: "warning",
+            message: `⚠ Resend returned no id — cannot verify delivery to ${actualRecipient}`,
+            details: { originalRecipient, actualRecipient, deliveryMode },
+          });
+          return new Response(
+            JSON.stringify({ success: false, status: "submitted", error: "Provider did not return a message id; delivery unverified", retryable: true, deliveryStatus: "failed" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const verifiedAt = new Date().toISOString();
         await transition(supabase, {
           userId, applicationId, jobId, jobTitle, company,
           status: "delivered",
@@ -479,30 +497,33 @@ ${userName}`;
             deliveryMode === "test"
               ? `🧪 TEST email delivered to ${actualRecipient} (intercepted from ${originalRecipient})`
               : `✅ Email delivered to ${actualRecipient}`,
-          details: { originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent", senderEmail: SENDER_EMAIL },
+          details: { originalRecipient, actualRecipient, deliveryMode, providerMessageId, senderEmail: SENDER_EMAIL },
           fields: {
-            applied_at: new Date().toISOString(),
+            applied_at: verifiedAt,
+            delivery_provider: "resend",
+            delivery_provider_message_id: providerMessageId,
+            delivery_verified_at: verifiedAt,
           },
         });
 
         await supabase.from("notifications").insert({
           user_id: userId,
           type: "application_sent",
-          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered!",
+          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered",
           message:
             deliveryMode === "test"
               ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
-              : `Your application for ${jobTitle} at ${company} was emailed to ${actualRecipient}`,
-          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent" },
+              : `Your application for ${jobTitle} at ${company} was delivered to ${actualRecipient} (provider id: ${providerMessageId.slice(0, 12)}…)`,
+          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, providerMessageId },
         });
 
         result = {
           success: true,
           method: "email",
-          message: `Application email sent to ${deliveredLabel}`,
+          message: `Application email delivered to ${deliveredLabel}`,
           emailSent: true,
-          deliveryStatus: "sent",
-          emailId: emailData?.id,
+          deliveryStatus: "delivered",
+          emailId: providerMessageId,
         };
 
       } catch (sendError) {
