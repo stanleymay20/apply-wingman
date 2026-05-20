@@ -318,6 +318,7 @@ serve(async (req) => {
             deliveryMode,
             originalRecipient,
             retryable: false,
+            deliveryStatus: "manual_action_required",
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
