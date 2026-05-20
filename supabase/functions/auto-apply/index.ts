@@ -31,8 +31,15 @@ interface ApplyRequest {
   company: string;
   sourceUrl: string;
   sourcePlatform: string;
+  runId?: string;
+  correlationId?: string;
 }
 
+// deliveryStatus is the SINGLE source of truth for the UI.
+// - "delivered": provider accepted (e.g. Resend returned an id) and we persisted it
+// - "manual_action_required": ATS / assisted handoff; user must finish in browser
+// - "failed": terminal failure
+// - "retrying": transient failure scheduled for retry
 interface ApplyResult {
   success: boolean;
   method: string;
@@ -40,7 +47,7 @@ interface ApplyResult {
   applicationUrl?: string;
   emailSent?: boolean;
   apiSubmitted?: boolean;
-  deliveryStatus?: "sent" | "failed";
+  deliveryStatus: "delivered" | "manual_action_required" | "failed" | "retrying";
   emailId?: string;
 }
 
