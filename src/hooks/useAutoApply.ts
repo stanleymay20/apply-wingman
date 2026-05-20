@@ -31,7 +31,8 @@ interface AutoApplyResult {
   applicationUrl?: string;
   emailSent?: boolean;
   apiSubmitted?: boolean;
-  deliveryStatus?: "sent" | "failed" | "pending";
+  // Server is the source of truth — UI must never imply more than this says.
+  deliveryStatus?: "delivered" | "manual_action_required" | "failed" | "retrying";
   confirmationExpected?: boolean;
 }
 
@@ -72,22 +73,27 @@ export function useAutoApply() {
     onSuccess: (result, params) => {
       queryClient.invalidateQueries({ queryKey: ["applications"] });
 
-      if (result.emailSent) {
-        if (result.deliveryStatus === "sent") {
-          toast.success(`Application sent to ${params.company}!`, {
-            description: "Note: Email applications typically don't receive automated confirmations.",
-          });
-        }
-      } else if (result.applicationUrl) {
-        // Open the application URL
-        window.open(result.applicationUrl, "_blank");
-        toast.success(result.message, {
-          description: result.confirmationExpected 
-            ? "You should receive a confirmation email from the company."
-            : "Complete your application on the opened page.",
+      // Truthful wording — only "delivered" is a verified success.
+      if (result.deliveryStatus === "delivered") {
+        toast.success(`Application delivered to ${params.company}`, {
+          description: "Provider confirmed acceptance. Recruiter response is not yet verified.",
         });
+      } else if (result.deliveryStatus === "manual_action_required") {
+        if (result.applicationUrl) window.open(result.applicationUrl, "_blank");
+        toast.message("Action needed to finish this application", {
+          description: result.applicationUrl
+            ? "Opened the application page — complete the form to finish."
+            : result.message,
+        });
+      } else if (result.deliveryStatus === "retrying") {
+        toast.message("Application queued for retry", {
+          description: "Transient error — we'll retry automatically.",
+        });
+      } else if (result.deliveryStatus === "failed") {
+        toast.error("Application failed to deliver", { description: result.message });
       } else {
-        toast.success(result.message);
+        // No deliveryStatus field — treat as unverified.
+        toast.message(result.message);
       }
     },
     onError: (error) => {

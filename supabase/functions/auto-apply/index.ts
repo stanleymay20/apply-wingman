@@ -31,8 +31,15 @@ interface ApplyRequest {
   company: string;
   sourceUrl: string;
   sourcePlatform: string;
+  runId?: string;
+  correlationId?: string;
 }
 
+// deliveryStatus is the SINGLE source of truth for the UI.
+// - "delivered": provider accepted (e.g. Resend returned an id) and we persisted it
+// - "manual_action_required": ATS / assisted handoff; user must finish in browser
+// - "failed": terminal failure
+// - "retrying": transient failure scheduled for retry
 interface ApplyResult {
   success: boolean;
   method: string;
@@ -40,7 +47,7 @@ interface ApplyResult {
   applicationUrl?: string;
   emailSent?: boolean;
   apiSubmitted?: boolean;
-  deliveryStatus?: "sent" | "failed";
+  deliveryStatus: "delivered" | "manual_action_required" | "failed" | "retrying";
   emailId?: string;
 }
 
@@ -107,6 +114,8 @@ function validateApplyRequest(data: unknown): { valid: boolean; error?: string; 
       company: req.company as string,
       sourceUrl: req.sourceUrl as string,
       sourcePlatform: req.sourcePlatform as string,
+      runId: typeof req.runId === "string" ? req.runId : undefined,
+      correlationId: typeof req.correlationId === "string" ? req.correlationId : undefined,
     },
   };
 }
@@ -309,6 +318,7 @@ serve(async (req) => {
             deliveryMode,
             originalRecipient,
             retryable: false,
+            deliveryStatus: "manual_action_required",
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -460,7 +470,25 @@ ${userName}`;
             ? `[TEST] ${actualRecipient} (would be ${originalRecipient})`
             : actualRecipient;
 
-        // Resend accepted → mark delivered
+        // Resend accepted → mark delivered (with provider id as proof)
+        const providerMessageId = emailData?.id ?? null;
+        if (!providerMessageId) {
+          // Defensive: Resend returned no id but no error — treat as unverified.
+          await transition(supabase, {
+            userId, applicationId, jobId, jobTitle, company,
+            status: "submitted",
+            action: "lifecycle_unverified",
+            level: "warning",
+            message: `⚠ Resend returned no id — cannot verify delivery to ${actualRecipient}`,
+            details: { originalRecipient, actualRecipient, deliveryMode },
+          });
+          return new Response(
+            JSON.stringify({ success: false, status: "submitted", error: "Provider did not return a message id; delivery unverified", retryable: true, deliveryStatus: "failed" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const verifiedAt = new Date().toISOString();
         await transition(supabase, {
           userId, applicationId, jobId, jobTitle, company,
           status: "delivered",
@@ -470,30 +498,33 @@ ${userName}`;
             deliveryMode === "test"
               ? `🧪 TEST email delivered to ${actualRecipient} (intercepted from ${originalRecipient})`
               : `✅ Email delivered to ${actualRecipient}`,
-          details: { originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent", senderEmail: SENDER_EMAIL },
+          details: { originalRecipient, actualRecipient, deliveryMode, providerMessageId, senderEmail: SENDER_EMAIL },
           fields: {
-            applied_at: new Date().toISOString(),
+            applied_at: verifiedAt,
+            delivery_provider: "resend",
+            delivery_provider_message_id: providerMessageId,
+            delivery_verified_at: verifiedAt,
           },
         });
 
         await supabase.from("notifications").insert({
           user_id: userId,
           type: "application_sent",
-          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered!",
+          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered",
           message:
             deliveryMode === "test"
               ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
-              : `Your application for ${jobTitle} at ${company} was emailed to ${actualRecipient}`,
-          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, emailId: emailData?.id, deliveryStatus: "sent" },
+              : `Your application for ${jobTitle} at ${company} was delivered to ${actualRecipient} (provider id: ${providerMessageId.slice(0, 12)}…)`,
+          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, providerMessageId },
         });
 
         result = {
           success: true,
           method: "email",
-          message: `Application email sent to ${deliveredLabel}`,
+          message: `Application email delivered to ${deliveredLabel}`,
           emailSent: true,
-          deliveryStatus: "sent",
-          emailId: emailData?.id,
+          deliveryStatus: "delivered",
+          emailId: providerMessageId,
         };
 
       } catch (sendError) {
@@ -536,6 +567,7 @@ ${userName}`;
             message: apiMessage,
             applicationUrl: applyUrl,
             apiSubmitted: false,
+            deliveryStatus: "manual_action_required",
           };
         } else {
           throw new Error("Could not extract Greenhouse job ID");
@@ -550,13 +582,14 @@ ${userName}`;
         if (leverJobId) {
           apiMessage = `Lever job detected (ID: ${leverJobId}). Opening application form.`;
           const applyUrl = `https://jobs.lever.co/${leverCompany}/${leverJobId}/apply`;
-          
+
           result = {
             success: true,
             method: "ats_api",
             message: apiMessage,
             applicationUrl: applyUrl,
             apiSubmitted: false,
+            deliveryStatus: "manual_action_required",
           };
         } else {
           throw new Error("Could not extract Lever job ID");
@@ -570,6 +603,7 @@ ${userName}`;
           message: "Workday requires manual application. Opening job page.",
           applicationUrl: sourceUrl,
           apiSubmitted: false,
+          deliveryStatus: "manual_action_required",
         };
       }
       // Unknown ATS - fallback to assisted
@@ -580,6 +614,7 @@ ${userName}`;
           message: `Unknown ATS platform. Opening job page for manual application.`,
           applicationUrl: sourceUrl,
           apiSubmitted: false,
+          deliveryStatus: "manual_action_required",
         };
       }
 
@@ -596,7 +631,7 @@ ${userName}`;
         details: { applicationUrl: result.applicationUrl, sourcePlatform, apiSubmitted: result.apiSubmitted },
         fields: { application_method: "ats_api" },
       });
-      // Annotate result so the client knows this isn't a true success
+      result.deliveryStatus = finalStatus === "delivered" ? "delivered" : "manual_action_required";
       result.message = `${result.message} (status: ${finalStatus})`;
     }
     // Method 3: Assisted Apply
@@ -606,6 +641,7 @@ ${userName}`;
         method: "assisted",
         message: "Application data prepared. Open the job link and paste your details.",
         applicationUrl: sourceUrl,
+        deliveryStatus: "manual_action_required",
       };
 
       // Assisted apply requires manual user action → never auto-success
