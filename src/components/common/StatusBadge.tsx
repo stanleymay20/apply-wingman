@@ -27,7 +27,8 @@ interface StatusBadgeProps {
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   applied: { label: "Applied", className: "bg-info/20 text-info border border-info/30" },
-  submitted: { label: "Submitted", className: "bg-info/20 text-info border border-info/30" },
+  // "Submitted" = handed to provider but NOT verified yet — show as info (not success)
+  submitted: { label: "Sent to provider", className: "bg-info/20 text-info border border-info/30" },
   interview: { label: "Interview", className: "bg-success/20 text-success border border-success/30" },
   rejected: { label: "Rejected", className: "bg-destructive/20 text-destructive border border-destructive/30" },
   pending: { label: "Pending", className: "bg-warning/20 text-warning border border-warning/30" },
@@ -39,10 +40,11 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   new: { label: "New", className: "bg-info/20 text-info border border-info/30" },
   queued: { label: "Queued", className: "bg-muted text-muted-foreground border border-border" },
   preparing: { label: "Preparing", className: "bg-warning/20 text-warning border border-warning/30" },
+  // Only "delivered" gets the success color — provider has confirmed acceptance.
   delivered: { label: "Delivered", className: "bg-success/20 text-success border border-success/30" },
   responded: { label: "Responded", className: "bg-success/20 text-success border border-success/30" },
   retrying: { label: "Retrying", className: "bg-warning/20 text-warning border border-warning/30" },
-  manual_action_required: { label: "Action Needed", className: "bg-destructive/20 text-destructive border border-destructive/30" },
+  manual_action_required: { label: "Action needed", className: "bg-destructive/20 text-destructive border border-destructive/30" },
 };
 
 const defaultConfig = {
