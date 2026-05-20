@@ -567,6 +567,7 @@ ${userName}`;
             message: apiMessage,
             applicationUrl: applyUrl,
             apiSubmitted: false,
+            deliveryStatus: "manual_action_required",
           };
         } else {
           throw new Error("Could not extract Greenhouse job ID");
@@ -581,13 +582,14 @@ ${userName}`;
         if (leverJobId) {
           apiMessage = `Lever job detected (ID: ${leverJobId}). Opening application form.`;
           const applyUrl = `https://jobs.lever.co/${leverCompany}/${leverJobId}/apply`;
-          
+
           result = {
             success: true,
             method: "ats_api",
             message: apiMessage,
             applicationUrl: applyUrl,
             apiSubmitted: false,
+            deliveryStatus: "manual_action_required",
           };
         } else {
           throw new Error("Could not extract Lever job ID");
@@ -601,6 +603,7 @@ ${userName}`;
           message: "Workday requires manual application. Opening job page.",
           applicationUrl: sourceUrl,
           apiSubmitted: false,
+          deliveryStatus: "manual_action_required",
         };
       }
       // Unknown ATS - fallback to assisted
@@ -611,6 +614,7 @@ ${userName}`;
           message: `Unknown ATS platform. Opening job page for manual application.`,
           applicationUrl: sourceUrl,
           apiSubmitted: false,
+          deliveryStatus: "manual_action_required",
         };
       }
 
@@ -627,7 +631,7 @@ ${userName}`;
         details: { applicationUrl: result.applicationUrl, sourcePlatform, apiSubmitted: result.apiSubmitted },
         fields: { application_method: "ats_api" },
       });
-      // Annotate result so the client knows this isn't a true success
+      result.deliveryStatus = finalStatus === "delivered" ? "delivered" : "manual_action_required";
       result.message = `${result.message} (status: ${finalStatus})`;
     }
     // Method 3: Assisted Apply
@@ -637,6 +641,7 @@ ${userName}`;
         method: "assisted",
         message: "Application data prepared. Open the job link and paste your details.",
         applicationUrl: sourceUrl,
+        deliveryStatus: "manual_action_required",
       };
 
       // Assisted apply requires manual user action → never auto-success
