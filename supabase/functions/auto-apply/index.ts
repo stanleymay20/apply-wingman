@@ -114,6 +114,8 @@ function validateApplyRequest(data: unknown): { valid: boolean; error?: string; 
       company: req.company as string,
       sourceUrl: req.sourceUrl as string,
       sourcePlatform: req.sourcePlatform as string,
+      runId: typeof req.runId === "string" ? req.runId : undefined,
+      correlationId: typeof req.correlationId === "string" ? req.correlationId : undefined,
     },
   };
 }
