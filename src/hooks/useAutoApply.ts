@@ -31,7 +31,8 @@ interface AutoApplyResult {
   applicationUrl?: string;
   emailSent?: boolean;
   apiSubmitted?: boolean;
-  deliveryStatus?: "sent" | "failed" | "pending";
+  // Server is the source of truth — UI must never imply more than this says.
+  deliveryStatus?: "delivered" | "manual_action_required" | "failed" | "retrying";
   confirmationExpected?: boolean;
 }
 
