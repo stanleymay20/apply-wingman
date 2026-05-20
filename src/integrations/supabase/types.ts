@@ -136,17 +136,24 @@ export type Database = {
           company_email_received_at: string | null
           company_email_snippet: string | null
           company_email_subject: string | null
+          correlation_id: string | null
           cover_letter: string | null
           created_at: string | null
           custom_responses: Json | null
           cv_profile_id: string | null
+          dead_lettered_at: string | null
           delivery_mode: string | null
+          delivery_provider: string | null
+          delivery_provider_message_id: string | null
+          delivery_verified_at: string | null
           documents_required: string[] | null
           documents_uploaded: string[] | null
           error_message: string | null
           id: string
           job_id: string
+          last_retry_reason: string | null
           match_score: number
+          next_retry_at: string | null
           notes: string | null
           original_recipient: string | null
           response_received_at: string | null
@@ -164,17 +171,24 @@ export type Database = {
           company_email_received_at?: string | null
           company_email_snippet?: string | null
           company_email_subject?: string | null
+          correlation_id?: string | null
           cover_letter?: string | null
           created_at?: string | null
           custom_responses?: Json | null
           cv_profile_id?: string | null
+          dead_lettered_at?: string | null
           delivery_mode?: string | null
+          delivery_provider?: string | null
+          delivery_provider_message_id?: string | null
+          delivery_verified_at?: string | null
           documents_required?: string[] | null
           documents_uploaded?: string[] | null
           error_message?: string | null
           id?: string
           job_id: string
+          last_retry_reason?: string | null
           match_score: number
+          next_retry_at?: string | null
           notes?: string | null
           original_recipient?: string | null
           response_received_at?: string | null
@@ -192,17 +206,24 @@ export type Database = {
           company_email_received_at?: string | null
           company_email_snippet?: string | null
           company_email_subject?: string | null
+          correlation_id?: string | null
           cover_letter?: string | null
           created_at?: string | null
           custom_responses?: Json | null
           cv_profile_id?: string | null
+          dead_lettered_at?: string | null
           delivery_mode?: string | null
+          delivery_provider?: string | null
+          delivery_provider_message_id?: string | null
+          delivery_verified_at?: string | null
           documents_required?: string[] | null
           documents_uploaded?: string[] | null
           error_message?: string | null
           id?: string
           job_id?: string
+          last_retry_reason?: string | null
           match_score?: number
+          next_retry_at?: string | null
           notes?: string | null
           original_recipient?: string | null
           response_received_at?: string | null
@@ -271,6 +292,203 @@ export type Database = {
           timezone?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      automation_failures: {
+        Row: {
+          application_id: string | null
+          context: Json
+          created_at: string
+          dead_lettered: boolean
+          error_code: string
+          error_message: string
+          id: string
+          occurred_at: string
+          retry_count: number
+          retryable: boolean
+          run_id: string | null
+          step_id: string | null
+          step_name: Database["public"]["Enums"]["automation_step_name"] | null
+          user_id: string
+        }
+        Insert: {
+          application_id?: string | null
+          context?: Json
+          created_at?: string
+          dead_lettered?: boolean
+          error_code: string
+          error_message: string
+          id?: string
+          occurred_at?: string
+          retry_count?: number
+          retryable?: boolean
+          run_id?: string | null
+          step_id?: string | null
+          step_name?: Database["public"]["Enums"]["automation_step_name"] | null
+          user_id: string
+        }
+        Update: {
+          application_id?: string | null
+          context?: Json
+          created_at?: string
+          dead_lettered?: boolean
+          error_code?: string
+          error_message?: string
+          id?: string
+          occurred_at?: string
+          retry_count?: number
+          retryable?: boolean
+          run_id?: string | null
+          step_id?: string | null
+          step_name?: Database["public"]["Enums"]["automation_step_name"] | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_failures_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_failures_step_id_fkey"
+            columns: ["step_id"]
+            isOneToOne: false
+            referencedRelation: "automation_run_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_run_steps: {
+        Row: {
+          application_id: string | null
+          completed_at: string | null
+          created_at: string
+          duration_ms: number | null
+          error: string | null
+          id: string
+          idempotency_key: string
+          job_id: string | null
+          payload: Json
+          run_id: string
+          started_at: string
+          status: Database["public"]["Enums"]["automation_step_status"]
+          step_name: Database["public"]["Enums"]["automation_step_name"]
+          user_id: string
+        }
+        Insert: {
+          application_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          idempotency_key: string
+          job_id?: string | null
+          payload?: Json
+          run_id: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["automation_step_status"]
+          step_name: Database["public"]["Enums"]["automation_step_name"]
+          user_id: string
+        }
+        Update: {
+          application_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          idempotency_key?: string
+          job_id?: string | null
+          payload?: Json
+          run_id?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["automation_step_status"]
+          step_name?: Database["public"]["Enums"]["automation_step_name"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_run_steps_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "automation_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_runs: {
+        Row: {
+          applications_attempted: number
+          applications_failed: number
+          applications_succeeded: number
+          completed_at: string | null
+          correlation_id: string
+          created_at: string
+          duration_ms: number | null
+          environment: string
+          error_summary: string | null
+          execution_source: string
+          id: string
+          initiated_by: string | null
+          jobs_discovered: number
+          jobs_matched: number
+          metadata: Json
+          started_at: string
+          status: Database["public"]["Enums"]["automation_run_status"]
+          trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at: string
+          user_id: string
+          worker_version: string
+        }
+        Insert: {
+          applications_attempted?: number
+          applications_failed?: number
+          applications_succeeded?: number
+          completed_at?: string | null
+          correlation_id?: string
+          created_at?: string
+          duration_ms?: number | null
+          environment?: string
+          error_summary?: string | null
+          execution_source?: string
+          id?: string
+          initiated_by?: string | null
+          jobs_discovered?: number
+          jobs_matched?: number
+          metadata?: Json
+          started_at?: string
+          status?: Database["public"]["Enums"]["automation_run_status"]
+          trigger_type: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at?: string
+          user_id: string
+          worker_version?: string
+        }
+        Update: {
+          applications_attempted?: number
+          applications_failed?: number
+          applications_succeeded?: number
+          completed_at?: string | null
+          correlation_id?: string
+          created_at?: string
+          duration_ms?: number | null
+          environment?: string
+          error_summary?: string | null
+          execution_source?: string
+          id?: string
+          initiated_by?: string | null
+          jobs_discovered?: number
+          jobs_matched?: number
+          metadata?: Json
+          started_at?: string
+          status?: Database["public"]["Enums"]["automation_run_status"]
+          trigger_type?: Database["public"]["Enums"]["automation_trigger_type"]
+          updated_at?: string
+          user_id?: string
+          worker_version?: string
         }
         Relationships: []
       }
@@ -810,6 +1028,96 @@ export type Database = {
         }
         Relationships: []
       }
+      system_settings: {
+        Row: {
+          created_at: string
+          description: string | null
+          key: string
+          max_value: number | null
+          min_value: number | null
+          scope: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+          value_type: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          key: string
+          max_value?: number | null
+          min_value?: number | null
+          scope?: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+          value_type: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          key?: string
+          max_value?: number | null
+          min_value?: number | null
+          scope?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+          value_type?: string
+        }
+        Relationships: []
+      }
+      system_settings_audit: {
+        Row: {
+          changed_by: string | null
+          id: string
+          new_value: Json | null
+          occurred_at: string
+          old_value: Json | null
+          operation: string
+          setting_key: string
+        }
+        Insert: {
+          changed_by?: string | null
+          id?: string
+          new_value?: Json | null
+          occurred_at?: string
+          old_value?: Json | null
+          operation: string
+          setting_key: string
+        }
+        Update: {
+          changed_by?: string | null
+          id?: string
+          new_value?: Json | null
+          occurred_at?: string
+          old_value?: Json | null
+          operation?: string
+          setting_key?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -819,13 +1127,48 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      increment_run_counter: {
+        Args: { p_delta?: number; p_field: string; p_run_id: string }
+        Returns: undefined
+      }
       recent_applications_to_company: {
         Args: { p_company: string; p_days?: number; p_user_id: string }
         Returns: number
       }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
+      automation_run_status:
+        | "running"
+        | "completed"
+        | "partial"
+        | "failed"
+        | "cancelled"
+      automation_step_name:
+        | "discover_started"
+        | "discover_completed"
+        | "match_started"
+        | "match_completed"
+        | "apply_started"
+        | "apply_completed"
+        | "apply_failed"
+        | "cooldown_skipped"
+        | "retry_started"
+        | "retry_completed"
+      automation_step_status:
+        | "pending"
+        | "running"
+        | "completed"
+        | "failed"
+        | "skipped"
+      automation_trigger_type: "cron" | "manual" | "retry" | "webhook"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -952,6 +1295,35 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+      automation_run_status: [
+        "running",
+        "completed",
+        "partial",
+        "failed",
+        "cancelled",
+      ],
+      automation_step_name: [
+        "discover_started",
+        "discover_completed",
+        "match_started",
+        "match_completed",
+        "apply_started",
+        "apply_completed",
+        "apply_failed",
+        "cooldown_skipped",
+        "retry_started",
+        "retry_completed",
+      ],
+      automation_step_status: [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "skipped",
+      ],
+      automation_trigger_type: ["cron", "manual", "retry", "webhook"],
+    },
   },
 } as const
