@@ -384,24 +384,40 @@ function NotificationsContent({
         {notifications.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">No notifications</p>
         ) : (
-          notifications.slice(0, 10).map((notif) => (
-            <div 
-              key={notif.id}
-              className={cn(
-                "p-4 border-b last:border-0 cursor-pointer hover:bg-secondary/50 transition-colors",
-                !notif.is_read && "bg-primary/5"
-              )}
-              onClick={() => !notif.is_read && markAsRead(notif.id)}
-            >
-              <p className="font-medium text-sm">{notif.title}</p>
-              <p className="text-xs text-muted-foreground mt-1">{notif.message}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                {notif.created_at 
-                  ? formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })
-                  : "Recently"}
-              </p>
-            </div>
-          ))
+          notifications.slice(0, 15).map((notif) => {
+            const sev = (notif.data?.severity as string) || "info";
+            const appId = notif.data?.application_id as string | undefined;
+            const sevDot =
+              sev === "error" ? "bg-destructive" :
+              sev === "warning" ? "bg-yellow-500" :
+              sev === "success" ? "bg-green-500" : "bg-muted-foreground";
+            return (
+              <div
+                key={notif.id}
+                className={cn(
+                  "p-4 border-b last:border-0 cursor-pointer hover:bg-secondary/50 transition-colors",
+                  !notif.is_read && "bg-primary/5"
+                )}
+                onClick={() => {
+                  if (!notif.is_read) markAsRead(notif.id);
+                  if (appId) window.location.href = `/applications?app=${appId}`;
+                }}
+              >
+                <div className="flex items-start gap-2">
+                  <span className={cn("mt-1.5 h-2 w-2 rounded-full shrink-0", sevDot)} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{notif.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{notif.message}</p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {notif.created_at
+                        ? formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })
+                        : "Recently"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
     </>
