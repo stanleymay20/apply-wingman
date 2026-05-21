@@ -814,4 +814,17 @@ async function transition(
     message,
     details: { status, ...details },
   });
+
+  // Fire lifecycle notification (cooldown/dedup handled inside helper; never throws).
+  if (["delivered", "manual_action_required", "failed", "retrying", "responded"].includes(status)) {
+    await notifyFromLifecycle(supabase, {
+      userId,
+      applicationId,
+      status,
+      jobTitle: params.jobTitle,
+      company: params.company,
+      errorMessage: typeof (details as any)?.error === "string" ? (details as any).error : message,
+      extra: { action },
+    });
+  }
 }
