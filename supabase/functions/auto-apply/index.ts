@@ -815,3 +815,104 @@ async function transition(
     });
   }
 }
+
+/**
+ * Centralized failure handler.
+ * - Classifies error (retryable vs terminal).
+ * - Increments retry_count.
+ * - Computes next_retry_at via exponential backoff + jitter (when retryable).
+ * - Dead-letters once retry_count >= max_retries.
+ * - Always writes application_logs + lifecycle notification via transition().
+ */
+async function handleFailure(
+  supabase: any,
+  params: {
+    userId: string;
+    applicationId: string;
+    jobId: string;
+    jobTitle: string;
+    company: string;
+    action: string;
+    rawMessage: string;
+    providerStatus?: number;
+    providerContext?: Record<string, unknown>;
+  },
+): Promise<{ status: "retrying" | "failed"; retryable: boolean; nextRetryAt?: string; dead_lettered: boolean }> {
+  const cls = classifyError(params.rawMessage, params.providerStatus);
+  const cfg = await loadRetryConfig(supabase);
+
+  // Load current retry state.
+  const { data: appRow } = await supabase
+    .from("applications")
+    .select("retry_count, max_retries, first_failure_at, idempotency_key")
+    .eq("id", params.applicationId)
+    .maybeSingle();
+
+  const prevRetryCount: number = appRow?.retry_count ?? 0;
+  const maxRetries: number = appRow?.max_retries ?? cfg.max_retries;
+  const nextRetryCount = prevRetryCount + 1;
+  const nowIso = new Date().toISOString();
+
+  const willRetry = cls.retryable && nextRetryCount <= maxRetries;
+  const status: "retrying" | "failed" = willRetry ? "retrying" : "failed";
+  const nextRetryAt = willRetry ? computeNextRetryAt(prevRetryCount, cfg).toISOString() : null;
+  const deadLettered = !willRetry && cls.retryable; // we hit cap on a retryable error
+
+  const fields: Record<string, unknown> = {
+    retry_count: nextRetryCount,
+    last_retry_reason: cls.retry_reason,
+    error_code: cls.error_code,
+    error_message: cls.normalized_message.slice(0, 1000),
+    last_failure_at: nowIso,
+    first_failure_at: appRow?.first_failure_at ?? nowIso,
+    next_retry_at: nextRetryAt,
+    provider_context: params.providerContext ?? null,
+  };
+  if (status === "failed") {
+    fields.dead_lettered_at = deadLettered ? nowIso : null;
+  }
+
+  await transition(supabase, {
+    userId: params.userId,
+    applicationId: params.applicationId,
+    jobId: params.jobId,
+    jobTitle: params.jobTitle,
+    company: params.company,
+    status,
+    action: params.action,
+    level: "error",
+    message: willRetry
+      ? `Retry scheduled (${nextRetryCount}/${maxRetries}) — ${cls.retry_reason}: ${cls.normalized_message}`
+      : `Failed (${cls.retry_reason}): ${cls.normalized_message}`,
+    details: {
+      error_code: cls.error_code,
+      retry_reason: cls.retry_reason,
+      retryable: cls.retryable,
+      retry_count: nextRetryCount,
+      max_retries: maxRetries,
+      next_retry_at: nextRetryAt,
+      dead_lettered: deadLettered,
+      provider_status: params.providerStatus,
+    },
+    fields,
+  });
+
+  // Write to automation_failures ledger.
+  await supabase.from("automation_failures").insert({
+    user_id: params.userId,
+    application_id: params.applicationId,
+    error_code: cls.error_code,
+    error_message: cls.normalized_message.slice(0, 1000),
+    retryable: cls.retryable,
+    retry_count: nextRetryCount,
+    dead_lettered: deadLettered,
+    context: {
+      action: params.action,
+      retry_reason: cls.retry_reason,
+      provider_status: params.providerStatus,
+      provider_context: params.providerContext ?? null,
+    },
+  });
+
+  return { status, retryable: cls.retryable, nextRetryAt: nextRetryAt ?? undefined, dead_lettered: deadLettered };
+}
