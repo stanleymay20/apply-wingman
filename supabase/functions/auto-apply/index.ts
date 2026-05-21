@@ -723,21 +723,7 @@ async function bumpFailedStats(supabase: any, userId: string) {
   }
 }
 
-// Classify error → retryable? (network, timeout, 429, 5xx) vs terminal (invalid recipient, auth)
-function isRetryableError(message: string): boolean {
-  if (!message) return false;
-  const m = message.toLowerCase();
-  const terminalPatterns = [
-    "invalid", "not found", "unauthorized", "forbidden", "missing", "validation",
-    "bad request", "401", "403", "404", "domain is not verified", "recipient",
-  ];
-  if (terminalPatterns.some((p) => m.includes(p))) return false;
-  const retryablePatterns = [
-    "timeout", "timed out", "network", "fetch failed", "econn", "rate limit",
-    "too many requests", "429", "500", "502", "503", "504", "temporarily",
-  ];
-  return retryablePatterns.some((p) => m.includes(p));
-}
+// Retry classification has moved to ../_shared/retry.ts (classifyError).
 
 // Atomic-ish lifecycle transition: update applications row + write audit log
 async function transition(
