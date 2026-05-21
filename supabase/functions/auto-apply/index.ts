@@ -644,27 +644,21 @@ ${userName}`;
   } catch (error) {
     console.error("Auto-apply error:", error);
     const errorMessage = error instanceof Error ? error.message : "Auto-apply failed";
-    const retryable = isRetryableError(errorMessage);
 
-    // No silent failures — always transition the application
+    let outcome: { status: "retrying" | "failed"; retryable: boolean; nextRetryAt?: string } = {
+      status: "failed", retryable: false,
+    };
     try {
       const body = await req.clone().json().catch(() => ({} as any));
-      if (body?.applicationId) {
-        await supabase
-          .from("applications")
-          .update({
-            status: retryable ? "retrying" : "failed",
-            error_message: errorMessage,
-          })
-          .eq("id", body.applicationId);
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: body.applicationId,
-          job_id: body.jobId ?? null,
+      if (body?.applicationId && userId) {
+        outcome = await handleFailure(supabase, {
+          userId,
+          applicationId: body.applicationId,
+          jobId: body.jobId ?? "",
+          jobTitle: body.jobTitle ?? "",
+          company: body.company ?? "",
           action: "lifecycle_unhandled_error",
-          level: "error",
-          message: `❌ Unhandled auto-apply error: ${errorMessage}`,
-          details: { errorMessage, retryable },
+          rawMessage: errorMessage,
         });
       }
     } catch (logErr) {
@@ -674,9 +668,10 @@ ${userName}`;
     return new Response(
       JSON.stringify({
         success: false,
-        status: retryable ? "retrying" : "failed",
+        status: outcome.status,
         error: errorMessage,
-        retryable,
+        retryable: outcome.retryable,
+        nextRetryAt: outcome.nextRetryAt,
         deliveryStatus: "failed",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
