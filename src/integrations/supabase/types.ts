@@ -148,14 +148,20 @@ export type Database = {
           delivery_verified_at: string | null
           documents_required: string[] | null
           documents_uploaded: string[] | null
+          error_code: string | null
           error_message: string | null
+          first_failure_at: string | null
           id: string
+          idempotency_key: string | null
           job_id: string
+          last_failure_at: string | null
           last_retry_reason: string | null
           match_score: number
+          max_retries: number
           next_retry_at: string | null
           notes: string | null
           original_recipient: string | null
+          provider_context: Json | null
           response_received_at: string | null
           retry_count: number | null
           status: string | null
@@ -183,14 +189,20 @@ export type Database = {
           delivery_verified_at?: string | null
           documents_required?: string[] | null
           documents_uploaded?: string[] | null
+          error_code?: string | null
           error_message?: string | null
+          first_failure_at?: string | null
           id?: string
+          idempotency_key?: string | null
           job_id: string
+          last_failure_at?: string | null
           last_retry_reason?: string | null
           match_score: number
+          max_retries?: number
           next_retry_at?: string | null
           notes?: string | null
           original_recipient?: string | null
+          provider_context?: Json | null
           response_received_at?: string | null
           retry_count?: number | null
           status?: string | null
@@ -218,14 +230,20 @@ export type Database = {
           delivery_verified_at?: string | null
           documents_required?: string[] | null
           documents_uploaded?: string[] | null
+          error_code?: string | null
           error_message?: string | null
+          first_failure_at?: string | null
           id?: string
+          idempotency_key?: string | null
           job_id?: string
+          last_failure_at?: string | null
           last_retry_reason?: string | null
           match_score?: number
+          max_retries?: number
           next_retry_at?: string | null
           notes?: string | null
           original_recipient?: string | null
+          provider_context?: Json | null
           response_received_at?: string | null
           retry_count?: number | null
           status?: string | null

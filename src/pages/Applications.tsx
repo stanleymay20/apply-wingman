@@ -431,7 +431,24 @@ export default function Applications() {
                         </div>
                       </td>
                       <td className="p-4">
-                        <StatusBadge status={app.status || "pending"} />
+                        <div className="flex flex-col gap-1">
+                          <StatusBadge status={app.status || "pending"} />
+                          {app.status === "retrying" && (app as any).next_retry_at && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Retry {(app as any).retry_count ?? 0}/{(app as any).max_retries ?? 5} ·{" "}
+                              {formatDistanceToNow(new Date((app as any).next_retry_at), { addSuffix: true })}
+                            </span>
+                          )}
+                          {(app as any).dead_lettered_at && (
+                            <span className="text-[10px] text-destructive">Dead-lettered · manual intervention required</span>
+                          )}
+                          {app.status === "manual_action_required" && (
+                            <span className="text-[10px] text-yellow-600 dark:text-yellow-400">Manual action required</span>
+                          )}
+                          {(app as any).last_retry_reason && app.status !== "delivered" && (
+                            <span className="text-[10px] text-muted-foreground">Reason: {(app as any).last_retry_reason}</span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 hidden xl:table-cell">
                         {app.job?.source_url && app.job?.source_platform ? (

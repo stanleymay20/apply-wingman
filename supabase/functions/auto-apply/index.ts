@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifyFromLifecycle } from "../_shared/notifications.ts";
+import { classifyError, computeNextRetryAt, loadRetryConfig } from "../_shared/retry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -439,21 +440,16 @@ ${userName}`;
         });
 
         if (emailError) {
-          const retryable = isRetryableError(emailError.message);
           console.error("Resend API error:", emailError);
-          await transition(supabase, {
+          const outcome = await handleFailure(supabase, {
             userId, applicationId, jobId, jobTitle, company,
-            status: retryable ? "retrying" : "failed",
             action: "lifecycle_email_failed",
-            level: "error",
-            message: `❌ Resend rejected email to ${actualRecipient}: ${emailError.message}`,
-            details: { originalRecipient, actualRecipient, deliveryMode, errorMessage: emailError.message, retryable, deliveryStatus: "failed" },
-            fields: { error_message: emailError.message },
+            rawMessage: emailError.message,
+            providerContext: { originalRecipient, actualRecipient, deliveryMode, provider: "resend" },
           });
           await bumpFailedStats(supabase, userId);
-          // Notification is emitted by transition() via notifyFromLifecycle.
           return new Response(
-            JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: emailError.message, retryable, deliveryStatus: "failed" }),
+            JSON.stringify({ success: false, status: outcome.status, error: emailError.message, retryable: outcome.retryable, nextRetryAt: outcome.nextRetryAt, deliveryStatus: "failed" }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -516,20 +512,16 @@ ${userName}`;
 
       } catch (sendError) {
         const errorMessage = sendError instanceof Error ? sendError.message : "Unknown email error";
-        const retryable = isRetryableError(errorMessage);
         console.error("Email send failed (network/exception):", errorMessage);
-        await transition(supabase, {
+        const outcome = await handleFailure(supabase, {
           userId, applicationId, jobId, jobTitle, company,
-          status: retryable ? "retrying" : "failed",
           action: "lifecycle_email_exception",
-          level: "error",
-          message: `❌ Email send threw exception: ${errorMessage}`,
-          details: { originalRecipient, actualRecipient, errorMessage, retryable, deliveryStatus: "failed" },
-          fields: { error_message: errorMessage },
+          rawMessage: errorMessage,
+          providerContext: { originalRecipient, actualRecipient, deliveryMode, provider: "resend", exception: true },
         });
         await bumpFailedStats(supabase, userId);
         return new Response(
-          JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: errorMessage, retryable, deliveryStatus: "failed" }),
+          JSON.stringify({ success: false, status: outcome.status, error: errorMessage, retryable: outcome.retryable, nextRetryAt: outcome.nextRetryAt, deliveryStatus: "failed" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -652,27 +644,21 @@ ${userName}`;
   } catch (error) {
     console.error("Auto-apply error:", error);
     const errorMessage = error instanceof Error ? error.message : "Auto-apply failed";
-    const retryable = isRetryableError(errorMessage);
 
-    // No silent failures — always transition the application
+    let outcome: { status: "retrying" | "failed"; retryable: boolean; nextRetryAt?: string } = {
+      status: "failed", retryable: false,
+    };
     try {
       const body = await req.clone().json().catch(() => ({} as any));
-      if (body?.applicationId) {
-        await supabase
-          .from("applications")
-          .update({
-            status: retryable ? "retrying" : "failed",
-            error_message: errorMessage,
-          })
-          .eq("id", body.applicationId);
-        await supabase.from("application_logs").insert({
-          user_id: userId,
-          application_id: body.applicationId,
-          job_id: body.jobId ?? null,
+      if (body?.applicationId && userId) {
+        outcome = await handleFailure(supabase, {
+          userId,
+          applicationId: body.applicationId,
+          jobId: body.jobId ?? "",
+          jobTitle: body.jobTitle ?? "",
+          company: body.company ?? "",
           action: "lifecycle_unhandled_error",
-          level: "error",
-          message: `❌ Unhandled auto-apply error: ${errorMessage}`,
-          details: { errorMessage, retryable },
+          rawMessage: errorMessage,
         });
       }
     } catch (logErr) {
@@ -682,9 +668,10 @@ ${userName}`;
     return new Response(
       JSON.stringify({
         success: false,
-        status: retryable ? "retrying" : "failed",
+        status: outcome.status,
         error: errorMessage,
-        retryable,
+        retryable: outcome.retryable,
+        nextRetryAt: outcome.nextRetryAt,
         deliveryStatus: "failed",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -736,21 +723,7 @@ async function bumpFailedStats(supabase: any, userId: string) {
   }
 }
 
-// Classify error → retryable? (network, timeout, 429, 5xx) vs terminal (invalid recipient, auth)
-function isRetryableError(message: string): boolean {
-  if (!message) return false;
-  const m = message.toLowerCase();
-  const terminalPatterns = [
-    "invalid", "not found", "unauthorized", "forbidden", "missing", "validation",
-    "bad request", "401", "403", "404", "domain is not verified", "recipient",
-  ];
-  if (terminalPatterns.some((p) => m.includes(p))) return false;
-  const retryablePatterns = [
-    "timeout", "timed out", "network", "fetch failed", "econn", "rate limit",
-    "too many requests", "429", "500", "502", "503", "504", "temporarily",
-  ];
-  return retryablePatterns.some((p) => m.includes(p));
-}
+// Retry classification has moved to ../_shared/retry.ts (classifyError).
 
 // Atomic-ish lifecycle transition: update applications row + write audit log
 async function transition(
@@ -813,4 +786,105 @@ async function transition(
       extra: { action },
     });
   }
+}
+
+/**
+ * Centralized failure handler.
+ * - Classifies error (retryable vs terminal).
+ * - Increments retry_count.
+ * - Computes next_retry_at via exponential backoff + jitter (when retryable).
+ * - Dead-letters once retry_count >= max_retries.
+ * - Always writes application_logs + lifecycle notification via transition().
+ */
+async function handleFailure(
+  supabase: any,
+  params: {
+    userId: string;
+    applicationId: string;
+    jobId: string;
+    jobTitle: string;
+    company: string;
+    action: string;
+    rawMessage: string;
+    providerStatus?: number;
+    providerContext?: Record<string, unknown>;
+  },
+): Promise<{ status: "retrying" | "failed"; retryable: boolean; nextRetryAt?: string; dead_lettered: boolean }> {
+  const cls = classifyError(params.rawMessage, params.providerStatus);
+  const cfg = await loadRetryConfig(supabase);
+
+  // Load current retry state.
+  const { data: appRow } = await supabase
+    .from("applications")
+    .select("retry_count, max_retries, first_failure_at, idempotency_key")
+    .eq("id", params.applicationId)
+    .maybeSingle();
+
+  const prevRetryCount: number = appRow?.retry_count ?? 0;
+  const maxRetries: number = appRow?.max_retries ?? cfg.max_retries;
+  const nextRetryCount = prevRetryCount + 1;
+  const nowIso = new Date().toISOString();
+
+  const willRetry = cls.retryable && nextRetryCount <= maxRetries;
+  const status: "retrying" | "failed" = willRetry ? "retrying" : "failed";
+  const nextRetryAt = willRetry ? computeNextRetryAt(prevRetryCount, cfg).toISOString() : null;
+  const deadLettered = !willRetry && cls.retryable; // we hit cap on a retryable error
+
+  const fields: Record<string, unknown> = {
+    retry_count: nextRetryCount,
+    last_retry_reason: cls.retry_reason,
+    error_code: cls.error_code,
+    error_message: cls.normalized_message.slice(0, 1000),
+    last_failure_at: nowIso,
+    first_failure_at: appRow?.first_failure_at ?? nowIso,
+    next_retry_at: nextRetryAt,
+    provider_context: params.providerContext ?? null,
+  };
+  if (status === "failed") {
+    fields.dead_lettered_at = deadLettered ? nowIso : null;
+  }
+
+  await transition(supabase, {
+    userId: params.userId,
+    applicationId: params.applicationId,
+    jobId: params.jobId,
+    jobTitle: params.jobTitle,
+    company: params.company,
+    status,
+    action: params.action,
+    level: "error",
+    message: willRetry
+      ? `Retry scheduled (${nextRetryCount}/${maxRetries}) — ${cls.retry_reason}: ${cls.normalized_message}`
+      : `Failed (${cls.retry_reason}): ${cls.normalized_message}`,
+    details: {
+      error_code: cls.error_code,
+      retry_reason: cls.retry_reason,
+      retryable: cls.retryable,
+      retry_count: nextRetryCount,
+      max_retries: maxRetries,
+      next_retry_at: nextRetryAt,
+      dead_lettered: deadLettered,
+      provider_status: params.providerStatus,
+    },
+    fields,
+  });
+
+  // Write to automation_failures ledger.
+  await supabase.from("automation_failures").insert({
+    user_id: params.userId,
+    application_id: params.applicationId,
+    error_code: cls.error_code,
+    error_message: cls.normalized_message.slice(0, 1000),
+    retryable: cls.retryable,
+    retry_count: nextRetryCount,
+    dead_lettered: deadLettered,
+    context: {
+      action: params.action,
+      retry_reason: cls.retry_reason,
+      provider_status: params.providerStatus,
+      provider_context: params.providerContext ?? null,
+    },
+  });
+
+  return { status, retryable: cls.retryable, nextRetryAt: nextRetryAt ?? undefined, dead_lettered: deadLettered };
 }
