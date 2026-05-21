@@ -502,16 +502,8 @@ ${userName}`;
           },
         });
 
-        await supabase.from("notifications").insert({
-          user_id: userId,
-          type: "application_sent",
-          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered",
-          message:
-            deliveryMode === "test"
-              ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
-              : `Your application for ${jobTitle} at ${company} was delivered to ${actualRecipient} (provider id: ${providerMessageId.slice(0, 12)}…)`,
-          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, providerMessageId },
-        });
+        // In-app notification is emitted by transition() → notifyFromLifecycle (rules engine).
+
 
         result = {
           success: true,
