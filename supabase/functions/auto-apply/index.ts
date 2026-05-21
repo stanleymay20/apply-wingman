@@ -451,13 +451,7 @@ ${userName}`;
             fields: { error_message: emailError.message },
           });
           await bumpFailedStats(supabase, userId);
-          await supabase.from("notifications").insert({
-            user_id: userId,
-            type: "application_failed",
-            title: "❌ Email Delivery Failed",
-            message: `Failed to send application for ${jobTitle} at ${company} to ${actualRecipient}. ${emailError.message}`,
-            data: { applicationId, jobId, recipientEmail: actualRecipient, errorMessage: emailError.message, retryable },
-          });
+          // Notification is emitted by transition() via notifyFromLifecycle.
           return new Response(
             JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: emailError.message, retryable, deliveryStatus: "failed" }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
