@@ -440,21 +440,16 @@ ${userName}`;
         });
 
         if (emailError) {
-          const retryable = isRetryableError(emailError.message);
           console.error("Resend API error:", emailError);
-          await transition(supabase, {
+          const outcome = await handleFailure(supabase, {
             userId, applicationId, jobId, jobTitle, company,
-            status: retryable ? "retrying" : "failed",
             action: "lifecycle_email_failed",
-            level: "error",
-            message: `❌ Resend rejected email to ${actualRecipient}: ${emailError.message}`,
-            details: { originalRecipient, actualRecipient, deliveryMode, errorMessage: emailError.message, retryable, deliveryStatus: "failed" },
-            fields: { error_message: emailError.message },
+            rawMessage: emailError.message,
+            providerContext: { originalRecipient, actualRecipient, deliveryMode, provider: "resend" },
           });
           await bumpFailedStats(supabase, userId);
-          // Notification is emitted by transition() via notifyFromLifecycle.
           return new Response(
-            JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: emailError.message, retryable, deliveryStatus: "failed" }),
+            JSON.stringify({ success: false, status: outcome.status, error: emailError.message, retryable: outcome.retryable, nextRetryAt: outcome.nextRetryAt, deliveryStatus: "failed" }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
