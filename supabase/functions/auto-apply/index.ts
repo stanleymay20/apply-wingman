@@ -512,20 +512,16 @@ ${userName}`;
 
       } catch (sendError) {
         const errorMessage = sendError instanceof Error ? sendError.message : "Unknown email error";
-        const retryable = isRetryableError(errorMessage);
         console.error("Email send failed (network/exception):", errorMessage);
-        await transition(supabase, {
+        const outcome = await handleFailure(supabase, {
           userId, applicationId, jobId, jobTitle, company,
-          status: retryable ? "retrying" : "failed",
           action: "lifecycle_email_exception",
-          level: "error",
-          message: `❌ Email send threw exception: ${errorMessage}`,
-          details: { originalRecipient, actualRecipient, errorMessage, retryable, deliveryStatus: "failed" },
-          fields: { error_message: errorMessage },
+          rawMessage: errorMessage,
+          providerContext: { originalRecipient, actualRecipient, deliveryMode, provider: "resend", exception: true },
         });
         await bumpFailedStats(supabase, userId);
         return new Response(
-          JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: errorMessage, retryable, deliveryStatus: "failed" }),
+          JSON.stringify({ success: false, status: outcome.status, error: errorMessage, retryable: outcome.retryable, nextRetryAt: outcome.nextRetryAt, deliveryStatus: "failed" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
