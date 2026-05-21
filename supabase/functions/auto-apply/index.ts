@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notifyFromLifecycle } from "../_shared/notifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -450,13 +451,7 @@ ${userName}`;
             fields: { error_message: emailError.message },
           });
           await bumpFailedStats(supabase, userId);
-          await supabase.from("notifications").insert({
-            user_id: userId,
-            type: "application_failed",
-            title: "❌ Email Delivery Failed",
-            message: `Failed to send application for ${jobTitle} at ${company} to ${actualRecipient}. ${emailError.message}`,
-            data: { applicationId, jobId, recipientEmail: actualRecipient, errorMessage: emailError.message, retryable },
-          });
+          // Notification is emitted by transition() via notifyFromLifecycle.
           return new Response(
             JSON.stringify({ success: false, status: retryable ? "retrying" : "failed", error: emailError.message, retryable, deliveryStatus: "failed" }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -507,16 +502,8 @@ ${userName}`;
           },
         });
 
-        await supabase.from("notifications").insert({
-          user_id: userId,
-          type: "application_sent",
-          title: deliveryMode === "test" ? "🧪 Test Email Delivered" : "✅ Application Delivered",
-          message:
-            deliveryMode === "test"
-              ? `TEST email for ${jobTitle} at ${company} was redirected to ${actualRecipient}.`
-              : `Your application for ${jobTitle} at ${company} was delivered to ${actualRecipient} (provider id: ${providerMessageId.slice(0, 12)}…)`,
-          data: { applicationId, jobId, originalRecipient, actualRecipient, deliveryMode, providerMessageId },
-        });
+        // In-app notification is emitted by transition() → notifyFromLifecycle (rules engine).
+
 
         result = {
           success: true,
@@ -813,4 +800,17 @@ async function transition(
     message,
     details: { status, ...details },
   });
+
+  // Fire lifecycle notification (cooldown/dedup handled inside helper; never throws).
+  if (["delivered", "manual_action_required", "failed", "retrying", "responded"].includes(status)) {
+    await notifyFromLifecycle(supabase, {
+      userId,
+      applicationId,
+      status,
+      jobTitle: params.jobTitle,
+      company: params.company,
+      errorMessage: typeof (details as any)?.error === "string" ? (details as any).error : message,
+      extra: { action },
+    });
+  }
 }

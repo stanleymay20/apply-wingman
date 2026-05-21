@@ -759,6 +759,96 @@ export type Database = {
           },
         ]
       }
+      notification_events: {
+        Row: {
+          application_id: string | null
+          channel: string
+          created_at: string
+          delivered_at: string | null
+          delivery_error: string | null
+          event_type: string
+          id: string
+          payload: Json
+          read_at: string | null
+          run_id: string | null
+          severity: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          application_id?: string | null
+          channel?: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_error?: string | null
+          event_type: string
+          id?: string
+          payload?: Json
+          read_at?: string | null
+          run_id?: string | null
+          severity?: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          application_id?: string | null
+          channel?: string
+          created_at?: string
+          delivered_at?: string | null
+          delivery_error?: string | null
+          event_type?: string
+          id?: string
+          payload?: Json
+          read_at?: string | null
+          run_id?: string | null
+          severity?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notification_rules: {
+        Row: {
+          channel: string
+          cooldown_minutes: number
+          created_at: string
+          enabled: boolean
+          event_type: string
+          id: string
+          severity: string
+          status: string | null
+          template_body: string
+          template_title: string
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          cooldown_minutes?: number
+          created_at?: string
+          enabled?: boolean
+          event_type: string
+          id?: string
+          severity?: string
+          status?: string | null
+          template_body: string
+          template_title: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          cooldown_minutes?: number
+          created_at?: string
+          enabled?: boolean
+          event_type?: string
+          id?: string
+          severity?: string
+          status?: string | null
+          template_body?: string
+          template_title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           created_at: string | null
