@@ -184,7 +184,7 @@ export function Sidebar() {
               {/* Navigation */}
               <nav className="flex-1 p-4 space-y-1">
                 {items.map((item) => {
-                  const isActive = location.pathname === item.path;
+                  const isActive = item.path === '/admin/runs' ? location.pathname.startsWith('/admin') : location.pathname === item.path;
                   return (
                     <Link
                       key={item.path}
@@ -250,7 +250,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
         {items.map((item) => {
-          const isActive = location.pathname === item.path;
+          const isActive = item.path === '/admin/runs' ? location.pathname.startsWith('/admin') : location.pathname === item.path;
           return (
             <Link
               key={item.path}
