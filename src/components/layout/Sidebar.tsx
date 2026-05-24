@@ -13,11 +13,13 @@ import {
   Command,
   Search,
   Activity,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -45,7 +47,12 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { profile } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+
+  const items = isAdmin
+    ? [...navItems, { path: "/admin/runs", icon: Shield, label: "Admin" }]
+    : navItems;
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -176,8 +183,8 @@ export function Sidebar() {
 
               {/* Navigation */}
               <nav className="flex-1 p-4 space-y-1">
-                {navItems.map((item) => {
-                  const isActive = location.pathname === item.path;
+                {items.map((item) => {
+                  const isActive = item.path === '/admin/runs' ? location.pathname.startsWith('/admin') : location.pathname === item.path;
                   return (
                     <Link
                       key={item.path}
@@ -242,8 +249,8 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+        {items.map((item) => {
+          const isActive = item.path === '/admin/runs' ? location.pathname.startsWith('/admin') : location.pathname === item.path;
           return (
             <Link
               key={item.path}

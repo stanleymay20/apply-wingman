@@ -18,6 +18,10 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import ActivityLog from "./pages/ActivityLog";
+import AdminRuns from "./pages/admin/AdminRuns";
+import AdminFailures from "./pages/admin/AdminFailures";
+import AdminDelivery from "./pages/admin/AdminDelivery";
+import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -84,6 +88,11 @@ const App = () => (
               <Route path="/analytics" element={<Layout><Analytics /></Layout>} />
               <Route path="/settings" element={<Layout><Settings /></Layout>} />
               <Route path="/activity" element={<Layout><ActivityLog /></Layout>} />
+              <Route path="/admin" element={<AdminRuns />} />
+              <Route path="/admin/runs" element={<AdminRuns />} />
+              <Route path="/admin/failures" element={<AdminFailures />} />
+              <Route path="/admin/delivery" element={<AdminDelivery />} />
+              <Route path="/admin/system-health" element={<AdminSystemHealth />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GlobalProviders>
