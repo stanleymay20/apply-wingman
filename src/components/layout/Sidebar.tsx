@@ -47,7 +47,12 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { profile } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+
+  const items = isAdmin
+    ? [...navItems, { path: "/admin/runs", icon: Shield, label: "Admin" }]
+    : navItems;
 
   // Close mobile menu on route change
   useEffect(() => {
