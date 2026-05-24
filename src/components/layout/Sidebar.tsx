@@ -183,7 +183,7 @@ export function Sidebar() {
 
               {/* Navigation */}
               <nav className="flex-1 p-4 space-y-1">
-                {navItems.map((item) => {
+                {items.map((item) => {
                   const isActive = location.pathname === item.path;
                   return (
                     <Link
@@ -249,7 +249,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
