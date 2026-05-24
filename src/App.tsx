@@ -18,6 +18,10 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import ActivityLog from "./pages/ActivityLog";
+import AdminRuns from "./pages/admin/AdminRuns";
+import AdminFailures from "./pages/admin/AdminFailures";
+import AdminDelivery from "./pages/admin/AdminDelivery";
+import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
