@@ -1,0 +1,1 @@
+UPDATE public.profiles SET delivery_mode = 'production', updated_at = now() WHERE automation_status = 'running';
