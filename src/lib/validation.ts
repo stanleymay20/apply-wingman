@@ -66,7 +66,7 @@ export const profileSettingsSchema = z.object({
     .number()
     .int()
     .min(10, "Minimum 10 applications per day")
-    .max(100, "Maximum 100 applications per day"),
+    .max(200, "Maximum 200 applications per day"),
   minimum_fit_score: z
     .number()
     .int()
