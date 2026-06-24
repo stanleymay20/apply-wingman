@@ -11,10 +11,10 @@ const corsHeaders = {
 };
 
 // Email sender configuration
-// NOTE: Using Resend's test domain until scrolllibrary.app is verified.
-// IMPORTANT: With onboarding@resend.dev, Resend only delivers to the email
-// address of the Resend account owner. Real recruiter inboxes will be rejected.
-const SENDER_EMAIL = "onboarding@resend.dev";
+// scrolllibrary.app is a VERIFIED sending domain in Resend, so emails to real
+// recruiter inboxes will deliver. Override with the SENDER_EMAIL secret if you
+// want to send from a different verified domain/address.
+const SENDER_EMAIL = Deno.env.get("SENDER_EMAIL") ?? "jobs@scrolllibrary.app";
 const SENDER_NAME = "ApplyPilot";
 
 // Application cap - raised for real usage
