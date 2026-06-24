@@ -276,22 +276,22 @@ export default function Settings() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <Label className="text-foreground">Daily Application Cap</Label>
-                <p className="text-sm text-muted-foreground">Maximum applications per day (10-100)</p>
+                <p className="text-sm text-muted-foreground">Maximum applications per day (10-200)</p>
               </div>
               <span className="text-2xl font-bold text-primary">{settings.daily_application_cap}</span>
             </div>
             <Slider
               value={[settings.daily_application_cap]}
               onValueChange={([value]) => setSettings({ ...settings, daily_application_cap: value })}
-              max={100}
+              max={200}
               min={10}
               step={5}
               className="w-full"
             />
             <div className="flex justify-between mt-2 text-xs text-muted-foreground">
               <span>10</span>
-              <span>50</span>
               <span>100</span>
+              <span>200</span>
             </div>
           </div>
 
