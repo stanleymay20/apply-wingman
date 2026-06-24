@@ -85,7 +85,7 @@ serve(async (req) => {
           .gte("applied_at", `${today}T00:00:00`)
           .lte("applied_at", `${today}T23:59:59`);
 
-        const dailyCap = user.daily_application_cap || 25;
+        const dailyCap = user.daily_application_cap || 200;
         const remainingCap = dailyCap - (todayApps?.length || 0);
 
         if (remainingCap <= 0) {
