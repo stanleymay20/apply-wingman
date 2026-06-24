@@ -85,7 +85,7 @@ serve(async (req) => {
           .eq("user_id", app.user_id)
           .gte("applied_at", `${today}T00:00:00`)
           .lte("applied_at", `${today}T23:59:59`);
-        if ((todayCount ?? 0) >= (profile.daily_application_cap || 25)) {
+        if ((todayCount ?? 0) >= (profile.daily_application_cap || 200)) {
           summary.skipped++;
           continue;
         }
