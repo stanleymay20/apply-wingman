@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -83,7 +84,6 @@ serve(async (req) => {
     // ===== END AUTHENTICATION =====
 
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
     if (!firecrawlKey) {
       return new Response(
@@ -212,50 +212,34 @@ serve(async (req) => {
         }
 
         // Use AI to extract job listings from markdown if available
-        if (lovableKey && markdown.length > 100) {
+        if (markdown.length > 100) {
           try {
-            const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${lovableKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "google/gemini-2.5-flash",
-                messages: [
-                  {
-                    role: "system",
-                    content: "Extract job listings from career page content. Return JSON array only.",
-                  },
-                  {
-                    role: "user",
-                    content: `Extract job listings from this career page (company: ${companyName || "Unknown"}):
+            const extracted = await callAIJson<Array<{ title?: string; location?: string; department?: string }>>({
+              messages: [
+                {
+                  role: "system",
+                  content: "Extract job listings from career page content. Return a JSON array only, no markdown.",
+                },
+                {
+                  role: "user",
+                  content: `Extract job listings from this career page (company: ${companyName || "Unknown"}):
 
 ${markdown.slice(0, 4000)}
 
 Return JSON array: [{"title": "Job Title", "location": "Location if found", "department": "Department if found"}]
-Only include actual job titles. Return [] if none found. No markdown, just JSON.`,
-                  },
-                ],
-              }),
+Only include actual job titles. Return [] if none found.`,
+                },
+              ],
+              temperature: 0.1,
             });
-
-            if (aiResponse.ok) {
-              const aiData = await aiResponse.json();
-              const content = aiData.choices?.[0]?.message?.content || "";
-              const jsonMatch = content.match(/\[[\s\S]*\]/);
-              if (jsonMatch) {
-                const extracted = JSON.parse(jsonMatch[0]);
-                for (const job of extracted) {
-                  if (job.title && !allJobs.some(j => j.title === job.title)) {
-                    allJobs.push({
-                      title: job.title,
-                      url: pageUrl,
-                      location: job.location,
-                      department: job.department,
-                    });
-                  }
-                }
+            for (const job of Array.isArray(extracted) ? extracted : []) {
+              if (job.title && !allJobs.some(j => j.title === job.title)) {
+                allJobs.push({
+                  title: job.title,
+                  url: pageUrl,
+                  location: job.location,
+                  department: job.department,
+                });
               }
             }
           } catch (aiError) {

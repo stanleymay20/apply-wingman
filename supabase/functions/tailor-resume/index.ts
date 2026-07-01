@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -12,9 +13,6 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -90,48 +88,29 @@ ${
 Full CV Text:
 ${cvProfile.cv_text || "Not provided"}`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+    let result: Record<string, unknown>;
+    try {
+      result = await callAIJson({
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         temperature: 0.4,
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
+      });
+    } catch (e) {
+      if (e instanceof AIRateLimitError) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted" }), {
+      if (e instanceof AICreditsError) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Set GOOGLE_API_KEY in Supabase secrets." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      throw new Error(`AI Gateway error: ${response.status}`);
-    }
-
-    const aiData = await response.json();
-    const content = aiData.choices?.[0]?.message?.content;
-    if (!content) throw new Error("No response from AI");
-
-    let result;
-    try {
-      result = JSON.parse(content);
-    } catch {
-      result = { tailored_cv_text: content, key_changes: [], keywords_added: [] };
+      throw e;
     }
 
     return new Response(JSON.stringify({ success: true, ...result }), {
