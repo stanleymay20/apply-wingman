@@ -30,6 +30,9 @@ import { CVProfileSelector } from "@/components/profile/CVProfileSelector";
 import { CVWorkHistoryDisplay } from "@/components/profile/CVWorkHistoryDisplay";
 import { CVAutoOptimizationPanel } from "@/components/profile/CVAutoOptimizationPanel";
 import { CVAuditTimeline } from "@/components/profile/CVAuditTimeline";
+import { ResumeCompletenessCard } from "@/components/profile/ResumeCompletenessCard";
+import { BulletImpactPanel } from "@/components/profile/BulletImpactPanel";
+import { ResumePDFExport } from "@/components/profile/ResumePDFExport";
 import { useQuery } from "@tanstack/react-query";
 
 export default function Profile() {
@@ -281,11 +284,27 @@ export default function Profile() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-8 animate-fade-in">
-        <h1 className="text-3xl font-bold text-foreground mb-2">My Profile</h1>
-        <p className="text-muted-foreground">
-          Manage your CV and candidate profile for AI-powered job matching
-        </p>
+      <div className="mb-8 animate-fade-in flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground mb-2">My Profile</h1>
+          <p className="text-muted-foreground">
+            Manage your CV and candidate profile for AI-powered job matching
+          </p>
+        </div>
+        {cvProfile?.last_parsed_at && (
+          <ResumePDFExport
+            cvProfile={cvProfile}
+            userProfile={{ full_name: profile?.full_name, email: profile?.email }}
+          />
+        )}
+      </div>
+
+      {/* Profile Completeness */}
+      <div className="mb-6">
+        <ResumeCompletenessCard
+          cvProfile={cvProfile || {}}
+          userProfile={{ preferred_roles: profile?.preferred_roles, preferred_locations: profile?.preferred_locations }}
+        />
       </div>
 
       {/* CV Profile Selector */}
@@ -680,6 +699,13 @@ export default function Profile() {
                 </Badge>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Bullet Impact Scoring */}
+        {cvProfile?.work_history && (cvProfile.work_history as any[]).length > 0 && (
+          <div className="animate-scale-in" style={{ animationDelay: "280ms" }}>
+            <BulletImpactPanel workHistory={cvProfile.work_history as any[]} />
           </div>
         )}
 
