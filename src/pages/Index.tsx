@@ -116,15 +116,15 @@ export default function Dashboard() {
                 <Clock className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h3 className="text-sm font-medium text-muted-foreground">Next Scan</h3>
+                <h3 className="text-sm font-medium text-muted-foreground">Automation Schedule</h3>
                 <p className="text-lg font-semibold text-foreground">
-                  {profile?.automation_status === 'running' ? 'In 12 minutes' : 'Paused'}
+                  {profile?.automation_status === 'running' ? 'Every 15 minutes' : 'Paused'}
                 </p>
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              {profile?.automation_status === 'running' 
-                ? 'Scanning LinkedIn, Indeed, and company boards'
+              {profile?.automation_status === 'running'
+                ? 'Job discovery + apply runs every 15 min · Stuck apps drain every 10 min'
                 : 'Start automation to begin scanning'}
             </p>
           </div>
