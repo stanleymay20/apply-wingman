@@ -293,7 +293,7 @@ export default function Profile() {
         </div>
         {cvProfile?.last_parsed_at && (
           <ResumePDFExport
-            cvProfile={cvProfile}
+            cvProfile={cvProfile as never}
             userProfile={{ full_name: profile?.full_name, email: profile?.email }}
           />
         )}
@@ -302,7 +302,7 @@ export default function Profile() {
       {/* Profile Completeness */}
       <div className="mb-6">
         <ResumeCompletenessCard
-          cvProfile={cvProfile || {}}
+          cvProfile={(cvProfile || {}) as never}
           userProfile={{ preferred_roles: profile?.preferred_roles, preferred_locations: profile?.preferred_locations }}
         />
       </div>
