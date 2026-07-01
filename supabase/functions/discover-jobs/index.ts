@@ -149,6 +149,8 @@ serve(async (req) => {
 
     const allJobs: DiscoveredJob[] = [];
     const seenUrls = new Set<string>();
+    const searchErrors: { keyword: string; status?: number; message: string }[] = [];
+    let searchAttempts = 0;
 
     // Build search queries for each platform
     const platformSites: Record<string, string> = {
@@ -197,6 +199,7 @@ serve(async (req) => {
       
       console.info("Searching:", searchQuery);
 
+      searchAttempts++;
       try {
         const searchResponse = await fetch("https://api.firecrawl.dev/v1/search", {
           method: "POST",
@@ -216,8 +219,10 @@ serve(async (req) => {
         });
 
         if (!searchResponse.ok) {
-          const errorData = await searchResponse.json();
-          console.error("Firecrawl search error:", errorData);
+          const errorData = await searchResponse.json().catch(() => ({}));
+          const errMsg = (errorData as any)?.message ?? (errorData as any)?.error ?? `HTTP ${searchResponse.status}`;
+          console.error(`Firecrawl search error for "${keyword}":`, errMsg);
+          searchErrors.push({ keyword, status: searchResponse.status, message: errMsg });
           continue;
         }
 
@@ -337,9 +342,25 @@ serve(async (req) => {
           });
         }
       } catch (searchError) {
-        console.error(`Search error for keyword "${keyword}":`, searchError);
+        const errMsg = searchError instanceof Error ? searchError.message : String(searchError);
+        console.error(`Search error for keyword "${keyword}":`, errMsg);
+        searchErrors.push({ keyword, message: errMsg });
         continue;
       }
+    }
+
+    // If every keyword search failed, report as failure rather than silently returning empty
+    if (searchAttempts > 0 && searchErrors.length === searchAttempts && allJobs.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "All Firecrawl searches failed",
+          searchErrors,
+          jobs: [],
+          userId,
+        }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.info(`Discovered ${allJobs.length} real jobs total`);
@@ -396,7 +417,12 @@ Return only valid JSON array with objects having: title, company, requirements (
     }
 
     return new Response(
-      JSON.stringify({ success: true, jobs: allJobs, userId }),
+      JSON.stringify({
+        success: true,
+        jobs: allJobs,
+        userId,
+        ...(searchErrors.length > 0 && { searchErrors }),
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
