@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { ResumeTailorButton } from "@/components/jobs/ResumeTailorButton";
 
 interface MatchBreakdown {
   skills_match?: number;
@@ -210,6 +211,21 @@ export function JobDetailsPanel({
               </ul>
             </div>
           )}
+
+          {hasCV && (
+            <div className="mt-4 pt-3 border-t border-border/50">
+              <ResumeTailorButton
+                job={{
+                  id: job.id,
+                  title: job.title,
+                  company: job.company,
+                  description: job.description,
+                  requirements: job.requirements,
+                }}
+                size="sm"
+              />
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-4 rounded-lg border border-dashed border-border bg-secondary/50">
@@ -222,17 +238,31 @@ export function JobDetailsPanel({
                   : "Upload your CV first to enable matching"}
               </p>
             </div>
-            {hasCV && onMatch && (
-              <Button size="sm" onClick={() => onMatch(job.id)} disabled={isMatching}>
-                {isMatching ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <Target className="w-4 h-4 mr-1" />
-                    Match
-                  </>
+            {hasCV && (
+              <div className="flex gap-2">
+                {onMatch && (
+                  <Button size="sm" onClick={() => onMatch(job.id)} disabled={isMatching}>
+                    {isMatching ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Target className="w-4 h-4 mr-1" />
+                        Match
+                      </>
+                    )}
+                  </Button>
                 )}
-              </Button>
+                <ResumeTailorButton
+                  job={{
+                    id: job.id,
+                    title: job.title,
+                    company: job.company,
+                    description: job.description,
+                    requirements: job.requirements,
+                  }}
+                  size="sm"
+                />
+              </div>
             )}
           </div>
         </div>
