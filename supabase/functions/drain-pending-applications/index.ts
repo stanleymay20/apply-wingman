@@ -1,4 +1,6 @@
 // Drains orphaned `applications.status='pending'` rows by invoking auto-apply.
+// Also recovers stale `status='preparing'` rows (stuck > 10 min) by resetting
+// them to 'pending' so they re-enter the dispatch loop on the same invocation.
 // Guards: in-isolate lock, per-user daily cap, company cooldown,
 // CV profile present, job has source URL. All transitions go through auto-apply
 // so the ledger + retry classifier + idempotency apply uniformly.
@@ -35,9 +37,32 @@ serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const summary = { picked: 0, dispatched: 0, skipped: 0, failed: 0 };
+  const summary = { picked: 0, dispatched: 0, skipped: 0, failed: 0, recoveredFromPreparing: 0 };
 
   try {
+    // ── Pre-sweep: reset stale 'preparing' rows back to 'pending' ──────────
+    // Any application stuck in 'preparing' for more than 10 minutes was
+    // abandoned mid-flight (e.g. function cold-start timeout). Reset it so
+    // the pending drain below picks it up in this same invocation.
+    const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: resetRows, error: resetErr } = await supabase
+      .from("applications")
+      .update({ status: "pending", updated_at: new Date().toISOString() })
+      .eq("status", "preparing")
+      .lt("updated_at", staleThreshold)
+      .is("applied_at", null)
+      .select("id");
+
+    if (resetErr) {
+      console.warn("Failed to reset stale preparing rows:", resetErr.message);
+    } else {
+      summary.recoveredFromPreparing = resetRows?.length ?? 0;
+      if (summary.recoveredFromPreparing > 0) {
+        console.log(`Recovered ${summary.recoveredFromPreparing} stale 'preparing' applications → 'pending'`);
+      }
+    }
+
+    // ── Main drain: pick up pending rows (including just-recovered ones) ───
     const { data: pendings, error } = await supabase
       .from("applications")
       .select("id, user_id, job_id, cv_profile_id, match_score, created_at")
