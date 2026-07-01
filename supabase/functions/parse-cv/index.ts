@@ -185,7 +185,7 @@ Return a JSON object with the following structure:
       "end_year": number or null (null if current),
       "is_current": boolean,
       "employment_type": "full-time|part-time|contract|freelance|internship",
-      "highlights": ["achievement 1 with metrics if available", "achievement 2", "responsibility 3"],
+      "responsibilities": ["achievement 1 with metrics if available", "achievement 2", "responsibility 3"],
       "technologies": ["tech used in this role"]
     }
   ],
@@ -211,7 +211,7 @@ CONFIDENCE SCORING GUIDELINES:
 
 IMPORTANT:
 - Extract ALL work history entries, even if there are 10+ jobs
-- Include quantifiable achievements (%, $, numbers) in highlights
+- Include quantifiable achievements (%, $, numbers) in responsibilities
 - Identify technologies/tools mentioned in each job's context
 - Calculate experience_years by summing work history durations
 - Be thorough - this data is used for job matching
@@ -343,7 +343,11 @@ Return ONLY valid JSON, no markdown code blocks.`;
           seniority_level: parsedCV.seniority_level || null,
           languages: flatLanguages,
           education: parsedCV.education || [],
-          work_history: parsedCV.work_history || [],
+          work_history: (parsedCV.work_history || []).map((w: any) => ({
+            ...w,
+            // Normalize: AI sometimes outputs 'highlights', everything else expects 'responsibilities'
+            responsibilities: w.responsibilities || w.highlights || [],
+          })),
           summary: parsedCV.summary || null,
           keywords: parsedCV.keywords || [],
           last_parsed_at: new Date().toISOString(),

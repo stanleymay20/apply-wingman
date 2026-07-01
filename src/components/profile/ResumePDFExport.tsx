@@ -6,14 +6,18 @@ import { toast } from "sonner";
 interface WorkHistoryItem {
   title?: string;
   company?: string;
+  location?: string;
   duration?: string;
   responsibilities?: string[];
+  highlights?: string[];    // legacy field name — normalized below
+  technologies?: string[];
 }
 
 interface EducationItem {
   degree?: string;
+  field?: string;
   institution?: string;
-  year?: string;
+  year?: string | number;
 }
 
 interface CVProfile {
@@ -36,64 +40,112 @@ interface ResumePDFExportProps {
   userProfile: UserProfile;
 }
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function buildResumeHTML(cv: CVProfile, user: UserProfile): string {
-  const name = user.full_name || "Your Name";
-  const email = user.email || "";
-  const summary = cv.summary || "";
-  const skills = (cv.skills || []).join(" • ");
+  const name = esc(user.full_name || "Your Name");
+  const email = esc(user.email || "");
+  const summary = esc(cv.summary || "");
+  const skills = cv.skills || [];
   const workHistory = Array.isArray(cv.work_history) ? cv.work_history : [];
   const education = Array.isArray(cv.education) ? cv.education : [];
 
   const workSection = workHistory
-    .map(
-      (w) => `
+    .map((w) => {
+      const bullets = (w.responsibilities || w.highlights || []);
+      const techLine = w.technologies?.length
+        ? `<div class="tech">Technologies: ${esc(w.technologies.join(", "))}</div>`
+        : "";
+      const locationStr = w.location ? ` · ${esc(w.location)}` : "";
+      return `
       <div class="job">
-        <div class="job-header">
-          <span class="job-title">${w.title || ""}</span>
-          <span class="job-company">${w.company || ""}${w.duration ? ` · ${w.duration}` : ""}</span>
-        </div>
-        ${
-          Array.isArray(w.responsibilities) && w.responsibilities.length
-            ? `<ul>${w.responsibilities.map((r) => `<li>${r}</li>`).join("")}</ul>`
-            : ""
-        }
-      </div>`
-    )
+        <div class="job-title">${esc(w.title || "")}</div>
+        <div class="job-meta">${esc(w.company || "")}${locationStr}${w.duration ? ` · ${esc(w.duration)}` : ""}</div>
+        ${bullets.length ? `<ul>${bullets.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+        ${techLine}
+      </div>`;
+    })
     .join("");
 
   const eduSection = education
-    .map(
-      (e) => `
-      <div class="edu">
-        <strong>${e.degree || ""}</strong> — ${e.institution || ""}${e.year ? ` (${e.year})` : ""}
-      </div>`
-    )
+    .map((e) => {
+      const degree = [e.degree, e.field].filter(Boolean).map(esc).join(" in ");
+      return `<div class="edu"><strong>${degree}</strong> — ${esc(e.institution || "")}${e.year ? ` (${e.year})` : ""}</div>`;
+    })
+    .join("");
+
+  // Group skills into rows of ~6 for readability
+  const skillChunks: string[][] = [];
+  for (let i = 0; i < skills.length; i += 6) skillChunks.push(skills.slice(i, i + 6));
+  const skillsHTML = skillChunks
+    .map((chunk) => `<div class="skill-row">${chunk.map((s) => `<span class="skill">${esc(s)}</span>`).join("")}</div>`)
     .join("");
 
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8"/>
+<title>${name} — Resume</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Georgia', serif; font-size: 11pt; color: #1a1a1a; padding: 36px 48px; line-height: 1.5; }
-  h1 { font-size: 22pt; font-weight: bold; letter-spacing: -0.5px; }
-  .contact { font-size: 10pt; color: #555; margin-top: 2px; }
-  .divider { border: none; border-top: 2px solid #1a1a1a; margin: 12px 0 10px; }
-  .section-title { font-size: 11pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; color: #1a1a1a; }
-  .section { margin-bottom: 18px; }
-  .summary { font-size: 10.5pt; color: #333; }
-  .skills { font-size: 10pt; color: #333; }
-  .job { margin-bottom: 12px; }
-  .job-header { display: flex; justify-content: space-between; }
-  .job-title { font-weight: bold; font-size: 10.5pt; }
-  .job-company { color: #555; font-size: 10pt; }
-  ul { padding-left: 16px; margin-top: 4px; }
-  li { font-size: 10pt; color: #333; margin-bottom: 2px; }
-  .edu { font-size: 10pt; color: #333; margin-bottom: 4px; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 10.5pt;
+    color: #111;
+    background: #fff;
+    padding: 48px 56px;
+    line-height: 1.55;
+    max-width: 780px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 26pt; font-weight: bold; letter-spacing: -0.5px; color: #111; }
+  .contact { font-size: 10pt; color: #555; margin-top: 3px; }
+  .divider { border: none; border-top: 2px solid #111; margin: 14px 0 16px; }
+  .section { margin-bottom: 20px; }
+  .section-title {
+    font-size: 10pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #111;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 3px;
+    margin-bottom: 10px;
+  }
+  .summary { font-size: 10.5pt; color: #222; }
+  /* Skills */
+  .skill-row { margin-bottom: 4px; }
+  .skill {
+    display: inline-block;
+    font-size: 9.5pt;
+    color: #333;
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    padding: 1px 7px;
+    margin: 2px 3px 2px 0;
+  }
+  /* Work */
+  .job { margin-bottom: 14px; page-break-inside: avoid; }
+  .job-title { font-weight: bold; font-size: 10.5pt; color: #111; }
+  .job-meta { font-size: 10pt; color: #555; margin-top: 1px; margin-bottom: 4px; }
+  ul { padding-left: 18px; margin-top: 4px; }
+  li { font-size: 10pt; color: #222; margin-bottom: 3px; line-height: 1.5; }
+  .tech { font-size: 9pt; color: #666; margin-top: 4px; font-style: italic; }
+  /* Education */
+  .edu { font-size: 10pt; color: #222; margin-bottom: 6px; }
+  /* Print: suppress browser-added date/URL header+footer */
   @media print {
-    body { padding: 0; }
-    @page { margin: 2cm; }
+    html, body { padding: 0; margin: 0; }
+    @page {
+      size: A4;
+      margin: 1.8cm 1.8cm 1.8cm 1.8cm;
+      /* Blank out browser header/footer lines */
+      @top-center { content: ""; }
+      @bottom-center { content: ""; }
+    }
   }
 </style>
 </head>
@@ -104,7 +156,7 @@ function buildResumeHTML(cv: CVProfile, user: UserProfile): string {
 
   ${summary ? `<div class="section"><div class="section-title">Summary</div><div class="summary">${summary}</div></div>` : ""}
 
-  ${skills ? `<div class="section"><div class="section-title">Skills</div><div class="skills">${skills}</div></div>` : ""}
+  ${skillsHTML ? `<div class="section"><div class="section-title">Skills</div>${skillsHTML}</div>` : ""}
 
   ${workSection ? `<div class="section"><div class="section-title">Experience</div>${workSection}</div>` : ""}
 
@@ -121,32 +173,28 @@ export function ResumePDFExport({ cvProfile, userProfile }: ResumePDFExportProps
     try {
       const html = buildResumeHTML(cvProfile, userProfile);
 
-      // Open a hidden iframe, write the HTML, then trigger print-to-PDF
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "0";
-      document.body.appendChild(iframe);
+      // Open a blank new window — no URL, no browser-chrome header/footer in print dialog
+      const printWindow = window.open("", "_blank", "width=900,height=700");
+      if (!printWindow) {
+        toast.error("Pop-up blocked — allow pop-ups for this site and try again");
+        return;
+      }
 
-      const doc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!doc) throw new Error("Could not create print frame");
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
 
-      doc.open();
-      doc.write(html);
-      doc.close();
+      // Wait for styles + fonts to render before triggering print
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.focus();
+          printWindow.print();
+          // Close after print dialog dismisses (slight delay)
+          setTimeout(() => printWindow.close(), 1000);
+        }, 300);
+      };
 
-      // Give styles time to render
-      await new Promise((r) => setTimeout(r, 400));
-
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-
-      // Clean up after a delay
-      setTimeout(() => document.body.removeChild(iframe), 2000);
-      toast.success("Resume sent to printer / Save as PDF in the print dialog");
+      toast.success('Print dialog opened — choose "Save as PDF" to download');
     } catch (err) {
       toast.error("Export failed — try again");
       console.error(err);
