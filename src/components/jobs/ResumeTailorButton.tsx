@@ -45,7 +45,7 @@ export function ResumeTailorButton({ job, variant = "outline", size = "default" 
   const handleOpen = async () => {
     setOpen(true);
     if (!tailorResult) {
-      await tailorResume(cvProfile as Record<string, unknown>, job as Record<string, unknown>);
+      await tailorResume(cvProfile as unknown as Record<string, unknown>, job as unknown as Record<string, unknown>);
     }
   };
 
