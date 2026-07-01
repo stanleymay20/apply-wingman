@@ -39,10 +39,11 @@ serve(async (req) => {
 
     const { cvText, skills, experience_years, seniority_level } = await req.json();
 
-    
-    if (!cvText || cvText.length < 100) {
+    console.log(`score-resume: cvText length=${cvText?.length ?? 0}, skills=${skills?.length ?? 0}`);
+
+    if (!cvText || cvText.trim().length < 50) {
       return new Response(
-        JSON.stringify({ error: "CV text is required (minimum 100 characters)" }),
+        JSON.stringify({ error: `CV text is too short (${cvText?.length ?? 0} chars). Please upload and parse your CV first.` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

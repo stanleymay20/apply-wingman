@@ -514,7 +514,15 @@ export default function Profile() {
               if (Array.isArray(cvProfile.skills) && cvProfile.skills.length) {
                 parts.push("Skills: " + cvProfile.skills.join(", "));
               }
-              return parts.join("\n") || "";
+              const built = parts.join("\n");
+              // Fall back to serialised parsed_data if built text is too thin
+              if (built.length < 80) {
+                const pd = (cvProfile as any).parsed_data;
+                if (pd && typeof pd === "object") {
+                  return JSON.stringify(pd).slice(0, 8000);
+                }
+              }
+              return built;
             })()}
             skills={cvProfile.skills || []}
             experienceYears={cvProfile.experience_years || undefined}

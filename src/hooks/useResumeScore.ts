@@ -36,7 +36,15 @@ export function useResumeScore() {
         },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        // Try to extract real error body from the function response
+        let detail = error.message;
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) detail = body.error;
+        } catch {}
+        throw new Error(detail);
+      }
       if (data?.error) throw new Error(data.error);
 
       // Save score to database
