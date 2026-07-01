@@ -497,7 +497,25 @@ export default function Profile() {
         <div className="mb-6">
           <ResumeScoreCard
             cvProfileId={cvProfile.id}
-            cvText={cvProfile.summary || ""}
+            cvText={(() => {
+              const parts: string[] = [];
+              if (cvProfile.summary) parts.push(cvProfile.summary);
+              const wh = (cvProfile as any).work_history as any[] | null;
+              if (Array.isArray(wh) && wh.length) {
+                wh.forEach((w: any) => {
+                  parts.push(`${w.title || ""} at ${w.company || ""} ${w.duration || ""}`);
+                  (w.responsibilities || w.highlights || []).forEach((r: string) => parts.push(r));
+                });
+              }
+              const edu = (cvProfile as any).education as any[] | null;
+              if (Array.isArray(edu) && edu.length) {
+                edu.forEach((e: any) => parts.push(`${e.degree || ""} ${e.field || ""} ${e.institution || ""}`));
+              }
+              if (Array.isArray(cvProfile.skills) && cvProfile.skills.length) {
+                parts.push("Skills: " + cvProfile.skills.join(", "));
+              }
+              return parts.join("\n") || "";
+            })()}
             skills={cvProfile.skills || []}
             experienceYears={cvProfile.experience_years || undefined}
             seniorityLevel={cvProfile.seniority_level || undefined}
