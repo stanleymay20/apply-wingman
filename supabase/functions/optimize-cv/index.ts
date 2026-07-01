@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -20,11 +21,6 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
-
     // JWT validation
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -169,56 +165,30 @@ Experience: ${cvData.experience_years} years | Level: ${cvData.seniority_level}
 
 Return ONLY valid JSON, no markdown code blocks.`;
 
-    console.log("Sending optimization request to AI Gateway...");
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+    console.log("Sending optimization request to AI...");
+    let optimizationResult: Record<string, unknown>;
+    try {
+      optimizationResult = await callAIJson({
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
+      });
+    } catch (e) {
+      if (e instanceof AIRateLimitError) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add credits." }), {
+      if (e instanceof AICreditsError) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Set GOOGLE_API_KEY in Supabase secrets." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const errorText = await response.text();
-      console.error("AI Gateway error:", response.status, errorText);
-      throw new Error(`AI Gateway error: ${response.status}`);
-    }
-
-    const aiData = await response.json();
-    const content = aiData.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error("No response from AI");
-    }
-
-    // Parse the JSON response
-    let optimizationResult;
-    try {
-      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
-      optimizationResult = JSON.parse(jsonMatch[1].trim());
-    } catch (parseError) {
-      console.error("Failed to parse optimization response:", content);
-      throw new Error("Failed to parse optimization data");
+      throw e;
     }
 
     console.log("Optimization complete, estimated new score:", optimizationResult.estimated_new_score);

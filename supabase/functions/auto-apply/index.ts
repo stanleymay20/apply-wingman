@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
@@ -131,7 +132,6 @@ serve(async (req) => {
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
   // ===== AUTHENTICATION =====
   // Support both user JWT auth and service-role internal calls
@@ -334,40 +334,28 @@ serve(async (req) => {
 
       // Generate professional application email using AI
       let emailBody = coverLetter || "";
-      if (!emailBody && lovableKey) {
+      if (!emailBody) {
         try {
-          const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${lovableKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [
-                {
-                  role: "system",
-                  content: "You write professional, concise job application emails. No fluff, just genuine interest and relevant qualifications.",
-                },
-                {
-                  role: "user",
-                  content: `Write a brief application email for:
+          emailBody = await callAI({
+            messages: [
+              {
+                role: "system",
+                content: "You write professional, concise job application emails. No fluff, just genuine interest and relevant qualifications.",
+              },
+              {
+                role: "user",
+                content: `Write a brief application email for:
 Position: ${jobTitle}
 Company: ${company}
 Applicant: ${userName}
 
 Keep it under 150 words. Professional but personable. End with expressing enthusiasm to discuss further.`,
-                },
-              ],
-            }),
+              },
+            ],
+            temperature: 0.6,
           });
-
-          if (aiResponse.ok) {
-            const aiData = await aiResponse.json();
-            emailBody = aiData.choices?.[0]?.message?.content || "";
-          }
         } catch (e) {
-          console.warn("AI email generation failed:", e);
+          console.warn("AI email generation failed, using default body:", e);
         }
       }
 

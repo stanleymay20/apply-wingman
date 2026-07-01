@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -46,118 +47,51 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
+    const systemPrompt = `You are an expert ATS (Applicant Tracking System) analyzer and resume reviewer. Analyze the provided resume/CV and return ONLY valid JSON with this exact structure:
+{
+  "score": <number 0-100, ATS compatibility score>,
+  "suggestions": [
+    { "category": "formatting|keywords|structure|content|length", "priority": "high|medium|low", "suggestion": "..." }
+  ],
+  "strengths": ["strength1", "strength2"],
+  "missing_elements": ["missing1", "missing2"],
+  "keyword_density": "poor|fair|good|excellent"
+}`;
 
-    const prompt = `You are an expert ATS (Applicant Tracking System) analyzer and resume reviewer. Analyze this resume/CV and provide:
+    const userPrompt = `Analyze this resume/CV for ATS compatibility:
 
-1. An ATS compatibility score from 0-100
-2. Specific suggestions to improve ATS compatibility
-3. Key strengths identified
-4. Missing elements that would improve the resume
-
-Resume/CV Content:
 ${cvText}
 
 ${skills?.length ? `Extracted Skills: ${skills.join(", ")}` : ""}
 ${experience_years ? `Years of Experience: ${experience_years}` : ""}
 ${seniority_level ? `Seniority Level: ${seniority_level}` : ""}
 
-Respond using the score_resume function.`;
+Return only valid JSON, no markdown.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+    let result: unknown;
+    try {
+      result = await callAIJson({
         messages: [
-          { role: "system", content: "You are an expert ATS analyzer. Analyze resumes for ATS compatibility." },
-          { role: "user", content: prompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
         ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "score_resume",
-              description: "Return ATS analysis results",
-              parameters: {
-                type: "object",
-                properties: {
-                  score: { 
-                    type: "number", 
-                    description: "ATS compatibility score 0-100" 
-                  },
-                  suggestions: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        category: { 
-                          type: "string", 
-                          enum: ["formatting", "keywords", "structure", "content", "length"] 
-                        },
-                        priority: { 
-                          type: "string", 
-                          enum: ["high", "medium", "low"] 
-                        },
-                        suggestion: { type: "string" }
-                      },
-                      required: ["category", "priority", "suggestion"]
-                    }
-                  },
-                  strengths: {
-                    type: "array",
-                    items: { type: "string" }
-                  },
-                  missing_elements: {
-                    type: "array",
-                    items: { type: "string" }
-                  },
-                  keyword_density: {
-                    type: "string",
-                    description: "Assessment of keyword usage: poor, fair, good, excellent"
-                  }
-                },
-                required: ["score", "suggestions", "strengths", "missing_elements", "keyword_density"]
-              }
-            }
-          }
-        ],
-        tool_choice: { type: "function", function: { name: "score_resume" } }
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
+        temperature: 0.1,
+      });
+    } catch (e) {
+      if (e instanceof AIRateLimitError) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (e instanceof AICreditsError) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits." }),
+          JSON.stringify({ error: "AI credits exhausted. Set GOOGLE_API_KEY in Supabase secrets." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const text = await response.text();
-      console.error("AI gateway error:", response.status, text);
-      throw new Error("Failed to analyze resume");
+      throw e;
     }
-
-    const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    
-    if (!toolCall?.function?.arguments) {
-      throw new Error("Invalid AI response format");
-    }
-
-    const result = JSON.parse(toolCall.function.arguments);
 
     return new Response(
       JSON.stringify(result),

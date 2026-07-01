@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -122,7 +123,6 @@ serve(async (req) => {
     // ===== END AUTHENTICATION =====
 
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
 
     if (!firecrawlKey) {
       console.error("FIRECRAWL_API_KEY not configured");
@@ -365,50 +365,28 @@ serve(async (req) => {
 
     console.info(`Discovered ${allJobs.length} real jobs total`);
 
-    // If we found jobs, optionally enhance with AI for better extraction
-    if (allJobs.length > 0 && lovableKey) {
+    // If we found jobs, optionally enhance with AI for better requirement extraction
+    if (allJobs.length > 0) {
       try {
         const topJobs = allJobs.slice(0, 5);
-        const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${lovableKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              {
-                role: "system",
-                content: `You extract structured job information from job listing descriptions. Return JSON array only, no markdown.`,
-              },
-              {
-                role: "user",
-                content: `Extract requirements from these job descriptions. Return JSON array with same structure but add "requirements" array for each:
-${JSON.stringify(topJobs.map((j) => ({ title: j.title, company: j.company, description: j.description.slice(0, 500) })), null, 2)}
+        const enhanced = await callAIJson<Array<{ title?: string; company?: string; requirements?: string[] }>>({
+          messages: [
+            {
+              role: "system",
+              content: "You extract structured job information from job listing descriptions. Return a JSON array only, no markdown.",
+            },
+            {
+              role: "user",
+              content: `Extract requirements from these job descriptions. Return JSON array with objects having: title, company, requirements (array of 3-5 key requirements as strings).
 
-Return only valid JSON array with objects having: title, company, requirements (array of 3-5 key requirements as strings).`,
-              },
-            ],
-          }),
+${JSON.stringify(topJobs.map((j) => ({ title: j.title, company: j.company, description: j.description.slice(0, 500) })), null, 2)}`,
+            },
+          ],
+          temperature: 0.1,
         });
-
-        if (aiResponse.ok) {
-          const aiData = await aiResponse.json();
-          const content = aiData.choices?.[0]?.message?.content || "";
-          
-          try {
-            const jsonMatch = content.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              const enhanced = JSON.parse(jsonMatch[0]);
-              for (let i = 0; i < Math.min(enhanced.length, topJobs.length); i++) {
-                if (enhanced[i]?.requirements && Array.isArray(enhanced[i].requirements)) {
-                  allJobs[i].requirements = enhanced[i].requirements;
-                }
-              }
-            }
-          } catch (parseError) {
-            console.warn("Could not parse AI requirements:", parseError);
+        for (let i = 0; i < Math.min(enhanced.length, topJobs.length); i++) {
+          if (enhanced[i]?.requirements && Array.isArray(enhanced[i].requirements)) {
+            allJobs[i].requirements = enhanced[i].requirements;
           }
         }
       } catch (aiError) {

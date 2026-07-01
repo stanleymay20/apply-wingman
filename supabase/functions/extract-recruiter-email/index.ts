@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 // Extracts or infers a recruiter/HR email for a job and persists it to jobs.recruiter_email.
 // Strategy (in priority order):
 //   1. Regex-scan job description for any email address
@@ -51,9 +52,6 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -111,36 +109,21 @@ Task: Return the single most likely recruiter or HR email address for this compa
 
 Return JSON only: { "email": "careers@company.com" } or { "email": null }`;
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+    let inferredEmail: string | null = null;
+    try {
+      const parsed = await callAIJson<{ email?: string | null }>({
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    if (!aiResp.ok) {
+      });
+      if (parsed.email && EMAIL_REGEX.test(parsed.email)) {
+        inferredEmail = parsed.email;
+      }
+    } catch {
       return new Response(
         JSON.stringify({ success: false, email: null, confidence: "none", reason: "AI unavailable" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const aiData = await aiResp.json();
-    const content = aiData.choices?.[0]?.message?.content;
-    let inferredEmail: string | null = null;
-    try {
-      const parsed = JSON.parse(content || "{}");
-      if (parsed.email && EMAIL_REGEX.test(parsed.email)) {
-        inferredEmail = parsed.email;
-      }
-    } catch { /* ignore */ }
 
     if (inferredEmail) {
       await supabase.from("jobs").update({

@@ -24,17 +24,15 @@ function render(template: string, vars: Record<string, string>): string {
 
 async function sendEmail(toEmail: string, subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
   const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  if (!RESEND_API_KEY || !LOVABLE_API_KEY) {
+  if (!RESEND_API_KEY) {
     return { ok: false, error: "missing_email_config" };
   }
   try {
-    const res = await fetch("https://connector-gateway.lovable.dev/resend/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "X-Connection-Api-Key": RESEND_API_KEY,
+        Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
         from: "ApplyPilot <onboarding@resend.dev>",

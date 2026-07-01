@@ -1,3 +1,4 @@
+import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -12,11 +13,6 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
-
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -131,38 +127,22 @@ Keywords: ${cvProfile.keywords?.join(", ") || "Not specified"}`;
         await new Promise(r => setTimeout(r, delay));
       }
 
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
+      let matchResult: any;
+      try {
+        matchResult = await callAIJson({
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
           temperature: 0.2,
-        }),
-      });
-
-      if (response.ok) {
-        const aiData = await response.json();
-        const content = aiData.choices?.[0]?.message?.content;
-
-        if (!content) {
-          throw new Error("No response from AI");
+        });
+      } catch (e) {
+        if (e instanceof AIRateLimitError) { lastError = new Error("Rate limit exceeded"); continue; }
+        if (e instanceof AICreditsError) {
+          return new Response(JSON.stringify({ error: "AI credits exhausted. Set GOOGLE_API_KEY for free usage." }), {
+            status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
-
-        let matchResult;
-        try {
-          const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
-          matchResult = JSON.parse(jsonMatch[1].trim());
-        } catch {
-          console.error("Failed to parse match result:", content);
-          throw new Error("Failed to parse match data");
-        }
+        throw e;
+      }
+      {
 
         // Update job with match score if jobId provided
         if (jobId) {
@@ -180,19 +160,7 @@ Keywords: ${cvProfile.keywords?.join(", ") || "Not specified"}`;
         });
       }
 
-      if (response.status === 429) {
-        lastError = new Error("Rate limit exceeded");
-        continue; // Retry
-      }
-      
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted" }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      
-      throw new Error(`AI Gateway error: ${response.status}`);
+
     }
 
     // All retries exhausted
