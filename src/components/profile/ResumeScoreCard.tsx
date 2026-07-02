@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { useResumeScore } from "@/hooks/useResumeScore";
+import { ResumeScoreUnavailableError, useResumeScore } from "@/hooks/useResumeScore";
 
 interface ATSSuggestion {
   category: string;
@@ -39,7 +39,7 @@ export function ResumeScoreCard({
   existingScore,
   existingSuggestions,
 }: ResumeScoreCardProps) {
-  const { scoreResume, isScoring, scoreResult } = useResumeScore();
+  const { scoreResume, isScoring, scoreResult, scoreError } = useResumeScore();
   const [expanded, setExpanded] = useState(false);
 
   const result = scoreResult || existingSuggestions;
@@ -97,6 +97,12 @@ export function ResumeScoreCard({
 
       {score !== null && score !== undefined ? (
         <div className="space-y-4">
+          {scoreError instanceof ResumeScoreUnavailableError && (
+            <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+              {scoreError.message}
+            </div>
+          )}
+
           <div>
             <div className="flex justify-between mb-2">
               <span className="text-sm text-muted-foreground">{getScoreLabel(score)}</span>
@@ -191,6 +197,12 @@ export function ResumeScoreCard({
         </div>
       ) : (
         <div className="text-center py-4">
+          {scoreError instanceof ResumeScoreUnavailableError && (
+            <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+              {scoreError.message}
+            </div>
+          )}
+
           <p className="text-sm text-muted-foreground mb-4">
             Analyze your resume for ATS compatibility and get actionable suggestions
           </p>
