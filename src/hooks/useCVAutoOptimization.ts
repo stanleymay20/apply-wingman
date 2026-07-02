@@ -86,7 +86,7 @@ export function useCVAutoOptimization() {
       });
 
       if (error) throw new Error(error.message);
-      if (data?.unavailable) throw new Error(data.error || "AI scoring is temporarily unavailable.");
+      if (data?.unavailable) throw new Error(data.error || "AI CV optimization is temporarily unavailable.");
       if (data?.error) throw new Error(data.error);
 
       return data as OptimizationResult;

@@ -75,8 +75,12 @@ export function CVAutoOptimizationPanel({
   };
 
   const handlePreviewOptimization = async () => {
-    await generateOptimization(cvProfileId, currentScore || undefined, atsSuggestions);
-    setShowPreview(true);
+    try {
+      await generateOptimization(cvProfileId, currentScore || undefined, atsSuggestions);
+      setShowPreview(true);
+    } catch {
+      setShowPreview(false);
+    }
   };
 
   const handleApplyChanges = async () => {

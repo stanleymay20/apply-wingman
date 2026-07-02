@@ -177,16 +177,28 @@ Return ONLY valid JSON, no markdown code blocks.`;
       });
     } catch (e) {
       if (e instanceof AIRateLimitError) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            unavailable: true,
+            code: "AI_RATE_LIMITED",
+            error: "AI CV optimization is temporarily rate limited. Please try again later.",
+            retryable: true,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
       if (e instanceof AICreditsError) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Set GOOGLE_API_KEY in Supabase secrets." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            unavailable: true,
+            code: "AI_CREDITS_EXHAUSTED",
+            error: "AI CV optimization is temporarily unavailable because AI quota is exhausted.",
+            retryable: false,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
       throw e;
     }
