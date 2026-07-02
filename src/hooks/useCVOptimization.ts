@@ -44,6 +44,7 @@ export function useCVOptimization() {
       });
 
       if (scoreError) throw new Error(scoreError.message);
+      if (initialScoreData?.unavailable) throw new Error(initialScoreData.error || "AI scoring is temporarily unavailable.");
       
       const originalScore = initialScoreData?.score || 0;
       
@@ -152,11 +153,11 @@ export function useCVOptimization() {
         },
       });
 
-      if (error) {
+      if (error || scoreData?.unavailable) {
         return {
           ready: false,
           score: 0,
-          suggestions: ["Unable to score CV. Please try again later."],
+          suggestions: [scoreData?.error || "Unable to score CV. Please try again later."],
         };
       }
 
