@@ -14,6 +14,18 @@ interface ScoreResult {
   keyword_density: string;
 }
 
+export class ResumeScoreUnavailableError extends Error {
+  code?: string;
+  retryable: boolean;
+
+  constructor(message: string, code?: string, retryable = false) {
+    super(message);
+    this.name = "ResumeScoreUnavailableError";
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
 interface ScoreParams {
   cvProfileId: string;
   cvText: string;
@@ -36,7 +48,14 @@ export function useResumeScore() {
         },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) throw new ResumeScoreUnavailableError(error.message, "EDGE_FUNCTION_ERROR", false);
+      if (data?.unavailable) {
+        throw new ResumeScoreUnavailableError(
+          data.error || "AI scoring is temporarily unavailable.",
+          data.code,
+          Boolean(data.retryable)
+        );
+      }
       if (data?.error) throw new Error(data.error);
 
       // Save score to database
@@ -59,6 +78,10 @@ export function useResumeScore() {
       toast.success("Resume scored successfully!");
     },
     onError: (error) => {
+      if (error instanceof ResumeScoreUnavailableError) {
+        toast.error(error.message);
+        return;
+      }
       toast.error(`Failed to score resume: ${error.message}`);
     },
   });
@@ -68,5 +91,6 @@ export function useResumeScore() {
     scoreResumeAsync: scoreMutation.mutateAsync,
     isScoring: scoreMutation.isPending,
     scoreResult: scoreMutation.data,
+    scoreError: scoreMutation.error,
   };
 }
