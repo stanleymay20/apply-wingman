@@ -147,16 +147,29 @@ export async function callAI(opts: CallAIOptions): Promise<string> {
     body.max_tokens = maxTokens;
   }
 
-  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  // Retry on transient errors (429 rate limit, 5xx) with exponential backoff: 2s, 4s, 8s
+  const backoffs = [2000, 4000, 8000];
+  let res!: Response;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
+    if (res.ok) break;
+
+    const retryable = res.status === 429 || res.status >= 500;
+    if (retryable && attempt < backoffs.length) {
+      await res.body?.cancel();
+      console.log(`[aiClient] ${res.status} — retrying in ${backoffs[attempt]}ms (attempt ${attempt + 1})`);
+      await new Promise((r) => setTimeout(r, backoffs[attempt]));
+      continue;
+    }
+
     const text = await res.text().catch(() => "");
     if (res.status === 429) throw new AIRateLimitError(text);
     if (res.status === 402) throw new AICreditsError(text);
