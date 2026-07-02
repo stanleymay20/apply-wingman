@@ -108,8 +108,29 @@ function resolveProvider(): ProviderConfig {
  * Throws on HTTP error or empty response.
  */
 export async function callAI(opts: CallAIOptions): Promise<string> {
+  try {
+    return await callAIWithProvider(resolveProvider(), opts);
+  } catch (err) {
+    // If the primary provider is rate-limited, fall back to the Lovable gateway.
+    const lovable = Deno.env.get("LOVABLE_API_KEY");
+    const isPrimaryLovable = Deno.env.get("AI_PROVIDER") === "lovable";
+    if (err instanceof AIRateLimitError && lovable && !isPrimaryLovable) {
+      console.log("[aiClient] primary provider rate-limited — falling back to Lovable gateway");
+      return await callAIWithProvider(
+        {
+          baseUrl: "https://ai.gateway.lovable.dev/v1",
+          apiKey: lovable,
+          defaultModel: "google/gemini-2.5-flash",
+        },
+        opts
+      );
+    }
+    throw err;
+  }
+}
+
+async function callAIWithProvider(provider: ProviderConfig, opts: CallAIOptions): Promise<string> {
   const { messages, temperature = 0.2, responseFormat, model, maxTokens } = opts;
-  const provider = resolveProvider();
 
   const resolvedModel =
     model
