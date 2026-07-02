@@ -349,19 +349,26 @@ serve(async (req) => {
       }
     }
 
-    // If every keyword search failed, report as failure rather than silently returning empty
+    // If every keyword search failed, report gracefully (200) so the client can show a
+    // friendly message instead of blank-screening on a 5xx.
     if (searchAttempts > 0 && searchErrors.length === searchAttempts && allJobs.length === 0) {
+      const creditsExhausted = searchErrors.some((e) => e.status === 402);
       return new Response(
         JSON.stringify({
           success: false,
-          error: "All Firecrawl searches failed",
+          error: creditsExhausted
+            ? "Job discovery is temporarily unavailable: the Firecrawl search quota is exhausted. Add credits to your Firecrawl plan to resume discovery."
+            : "All job searches failed. Please try again shortly.",
+          code: creditsExhausted ? "FIRECRAWL_CREDITS_EXHAUSTED" : "DISCOVERY_FAILED",
+          unavailable: true,
           searchErrors,
           jobs: [],
           userId,
         }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
 
     console.info(`Discovered ${allJobs.length} real jobs total`);
 
