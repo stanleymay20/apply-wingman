@@ -116,6 +116,23 @@ export async function callAI(opts: CallAIOptions): Promise<string> {
       ? (provider.modelMap?.[model] ?? model)
       : provider.defaultModel;
 
+  // Safe diagnostics — NO keys, NO request content. Hostname only.
+  let baseHost = "unknown";
+  try {
+    baseHost = new URL(provider.baseUrl).hostname;
+  } catch {
+    // ignore malformed base url
+  }
+  const providerName =
+    baseHost.includes("googleapis") ? "google"
+      : baseHost.includes("groq") ? "groq"
+      : baseHost.includes("openai") ? "openai"
+      : baseHost.includes("gateway.lovable") ? "lovable"
+      : "custom";
+  console.log(
+    `[aiClient] provider=${providerName} host=${baseHost} model=${resolvedModel} explicitProvider=${Deno.env.get("AI_PROVIDER") ?? "(unset)"}`
+  );
+
   const body: Record<string, unknown> = {
     model: resolvedModel,
     messages,
