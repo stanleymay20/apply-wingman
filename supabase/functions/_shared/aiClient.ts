@@ -2,19 +2,22 @@
  * Shared AI client — provider-agnostic chat completion wrapper.
  *
  * Priority order (first key found in env wins):
- *   1. GOOGLE_API_KEY  → Google Gemini API (free tier: 1 500 req/day, 1 M tokens/day)
- *   2. GROQ_API_KEY    → Groq (fast open-source models, free tier)
- *   3. OPENAI_API_KEY  → OpenAI
- *   4. LOVABLE_API_KEY → Legacy Lovable gateway (deprecated; use Google instead)
+ *   1. LOCAL_LLM_BASE_URL + LOCAL_LLM_API_KEY → self-hosted OpenAI-compatible endpoint
+ *   2. GROQ_API_KEY                          → Groq (fast open-source models)
+ *   3. LOVABLE_API_KEY                       → Lovable AI Gateway
+ *   4. OPENAI_API_KEY                        → OpenAI
+ *   5. GOOGLE_API_KEY                        → Google Gemini API
  *
  * Override via env:
- *   AI_PROVIDER = "google" | "groq" | "openai" | "lovable"
- *   AI_MODEL    = model name override (e.g. "gemini-2.0-flash")
+ *   AI_PROVIDER = "local" | "google" | "groq" | "openai" | "lovable"
+ *   AI_MODEL    = model name override (e.g. "qwen2.5:14b", "gemini-2.0-flash")
+ *   LOCAL_LLM_BASE_URL = public OpenAI-compatible base URL (for example https://llm.example.com/v1)
+ *   LOCAL_LLM_API_KEY  = bearer token for the local endpoint gateway/proxy
  *
  * All providers use the OpenAI-compatible /v1/chat/completions format.
  *
- * Setup (Supabase dashboard → Project Settings → Edge Functions → Secrets):
- *   GOOGLE_API_KEY = <from https://aistudio.google.com/app/apikey — free>
+ * Setup: configure secrets in Lovable Cloud. For a self-hosted model, expose it through a
+ * protected OpenAI-compatible HTTPS endpoint; Lovable Cloud cannot call localhost/private LAN URLs.
  */
 
 export type ChatMessage =
@@ -43,6 +46,7 @@ interface ProviderConfig {
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  authMode?: "bearer" | "lovable";
   /** Map legacy Lovable model names to provider-native names */
   modelMap?: Record<string, string>;
 }
@@ -50,22 +54,26 @@ interface ProviderConfig {
 function resolveProvider(): ProviderConfig {
   const explicit = Deno.env.get("AI_PROVIDER");
 
+  const localBaseUrl = Deno.env.get("LOCAL_LLM_BASE_URL");
+  const localApiKey = Deno.env.get("LOCAL_LLM_API_KEY");
   const google = Deno.env.get("GOOGLE_API_KEY");
   const groq = Deno.env.get("GROQ_API_KEY");
   const openai = Deno.env.get("OPENAI_API_KEY");
   const lovable = Deno.env.get("LOVABLE_API_KEY");
 
-  if (explicit === "google" || (!explicit && google)) {
-    if (!google) throw new Error("AI_PROVIDER=google but GOOGLE_API_KEY is not set");
+  if (explicit === "local" || (!explicit && localBaseUrl && localApiKey)) {
+    if (!localBaseUrl) throw new Error("AI_PROVIDER=local but LOCAL_LLM_BASE_URL is not set");
+    if (!localApiKey) throw new Error("AI_PROVIDER=local but LOCAL_LLM_API_KEY is not set");
     return {
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-      apiKey: google,
-      defaultModel: Deno.env.get("AI_MODEL") ?? "gemini-2.0-flash",
+      baseUrl: localBaseUrl.replace(/\/$/, ""),
+      apiKey: localApiKey,
+      defaultModel: Deno.env.get("AI_MODEL") ?? Deno.env.get("LOCAL_LLM_MODEL") ?? "qwen2.5:14b",
+      authMode: "bearer",
       modelMap: {
-        "google/gemini-2.5-flash": "gemini-2.5-flash",
-        "google/gemini-3-flash-preview": "gemini-2.0-flash",
-        "google/gemini-2.0-flash": "gemini-2.0-flash",
-        "google/gemini-1.5-flash": "gemini-1.5-flash",
+        "google/gemini-2.5-flash": Deno.env.get("LOCAL_LLM_MODEL") ?? "qwen2.5:14b",
+        "google/gemini-3-flash-preview": Deno.env.get("LOCAL_LLM_MODEL") ?? "qwen2.5:14b",
+        "google/gemini-2.0-flash": Deno.env.get("LOCAL_LLM_MODEL") ?? "qwen2.5:14b",
+        "gpt-4o-mini": Deno.env.get("LOCAL_LLM_MODEL") ?? "qwen2.5:14b",
       },
     };
   }
@@ -76,15 +84,7 @@ function resolveProvider(): ProviderConfig {
       baseUrl: "https://api.groq.com/openai/v1",
       apiKey: groq,
       defaultModel: Deno.env.get("AI_MODEL") ?? "llama-3.3-70b-versatile",
-    };
-  }
-
-  if (explicit === "openai" || (!explicit && openai)) {
-    if (!openai) throw new Error("AI_PROVIDER=openai but OPENAI_API_KEY is not set");
-    return {
-      baseUrl: "https://api.openai.com/v1",
-      apiKey: openai,
-      defaultModel: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
+      authMode: "bearer",
     };
   }
 
@@ -94,12 +94,38 @@ function resolveProvider(): ProviderConfig {
       baseUrl: "https://ai.gateway.lovable.dev/v1",
       apiKey: lovable,
       defaultModel: Deno.env.get("AI_MODEL") ?? "google/gemini-2.5-flash",
+      authMode: "lovable",
+    };
+  }
+
+  if (explicit === "openai" || (!explicit && openai)) {
+    if (!openai) throw new Error("AI_PROVIDER=openai but OPENAI_API_KEY is not set");
+    return {
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: openai,
+      defaultModel: Deno.env.get("AI_MODEL") ?? "gpt-4o-mini",
+      authMode: "bearer",
+    };
+  }
+
+  if (explicit === "google" || (!explicit && google)) {
+    if (!google) throw new Error("AI_PROVIDER=google but GOOGLE_API_KEY is not set");
+    return {
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      apiKey: google,
+      defaultModel: Deno.env.get("AI_MODEL") ?? "gemini-2.0-flash",
+      authMode: "bearer",
+      modelMap: {
+        "google/gemini-2.5-flash": "gemini-2.5-flash",
+        "google/gemini-3-flash-preview": "gemini-2.0-flash",
+        "google/gemini-2.0-flash": "gemini-2.0-flash",
+        "google/gemini-1.5-flash": "gemini-1.5-flash",
+      },
     };
   }
 
   throw new Error(
-    "No AI provider configured. Set GOOGLE_API_KEY (free) in Supabase Edge Function secrets. " +
-      "Get one at https://aistudio.google.com/app/apikey"
+    "No AI provider configured. Configure LOCAL_LLM_BASE_URL + LOCAL_LLM_API_KEY, LOVABLE_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY in Lovable Cloud secrets."
   );
 }
 
@@ -121,6 +147,7 @@ export async function callAI(opts: CallAIOptions): Promise<string> {
           baseUrl: "https://ai.gateway.lovable.dev/v1",
           apiKey: lovable,
           defaultModel: "google/gemini-2.5-flash",
+          authMode: "lovable",
         },
         opts
       );
@@ -149,6 +176,7 @@ async function callAIWithProvider(provider: ProviderConfig, opts: CallAIOptions)
       : baseHost.includes("groq") ? "groq"
       : baseHost.includes("openai") ? "openai"
       : baseHost.includes("gateway.lovable") ? "lovable"
+      : Deno.env.get("AI_PROVIDER") === "local" ? "local"
       : "custom";
   console.log(
     `[aiClient] provider=${providerName} host=${baseHost} model=${resolvedModel} explicitProvider=${Deno.env.get("AI_PROVIDER") ?? "(unset)"}`
@@ -168,16 +196,24 @@ async function callAIWithProvider(provider: ProviderConfig, opts: CallAIOptions)
     body.max_tokens = maxTokens;
   }
 
+  const requestHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (provider.authMode === "lovable") {
+    requestHeaders["Lovable-API-Key"] = provider.apiKey;
+    requestHeaders["X-Lovable-AIG-SDK"] = "custom-edge-fetch";
+  } else {
+    requestHeaders.Authorization = `Bearer ${provider.apiKey}`;
+  }
+
   // Retry on transient errors (429 rate limit, 5xx) with exponential backoff: 2s, 4s, 8s
   const backoffs = [2000, 4000, 8000];
   let res!: Response;
   for (let attempt = 0; ; attempt++) {
     res = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: requestHeaders,
       body: JSON.stringify(body),
     });
 
