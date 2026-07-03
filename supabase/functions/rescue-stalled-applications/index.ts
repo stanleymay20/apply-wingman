@@ -6,6 +6,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { openRun, closeRun, emitStep, WORKER_VERSION } from "../_shared/runLedger.ts";
+import { prepareApplicationMaterials } from "../_shared/materials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,9 +37,9 @@ serve(async (req) => {
     const { data: stalledApps, error: appsErr } = await supabase
       .from("applications")
       .select(`
-        id, user_id, job_id, cover_letter,
-        jobs!inner(id, title, company, source_url, source_platform, description, recruiter_email, recruiter_email_confidence, recruiter_email_extracted_at),
-        profiles!inner(email, full_name, automation_status, daily_application_cap, cv_profiles!inner(id, cv_file_url))
+        id, user_id, job_id, cover_letter, tailored_cv_pdf_url,
+        jobs!inner(id, title, company, source_url, source_platform, description, requirements, location, recruiter_email, recruiter_email_confidence, recruiter_email_extracted_at),
+        profiles!inner(email, full_name, automation_status, daily_application_cap, cv_profiles!inner(id, cv_file_url, summary, skills, cv_text, work_history, experience_years, seniority_level))
       `)
       .eq("status", "manual_action_required")
       .eq("profiles.automation_status", "running")
@@ -52,9 +53,9 @@ serve(async (req) => {
     const { data: emailReadyApps } = await supabase
       .from("applications")
       .select(`
-        id, user_id, job_id, cover_letter,
-        jobs!inner(id, title, company, source_url, source_platform, recruiter_email, recruiter_email_confidence),
-        profiles!inner(email, full_name, automation_status, daily_application_cap, cv_profiles!inner(id, cv_file_url))
+        id, user_id, job_id, cover_letter, tailored_cv_pdf_url,
+        jobs!inner(id, title, company, source_url, source_platform, description, requirements, location, recruiter_email, recruiter_email_confidence),
+        profiles!inner(email, full_name, automation_status, daily_application_cap, cv_profiles!inner(id, cv_file_url, summary, skills, cv_text, work_history, experience_years, seniority_level))
       `)
       .eq("status", "manual_action_required")
       .eq("profiles.automation_status", "running")
@@ -100,6 +101,22 @@ serve(async (req) => {
 
       if (!recruiterEmail) { summary.skipped++; continue; }
 
+      // Ensure a tailored CV + cover letter exist before emailing the recruiter.
+      // Reuses stored materials when present; falls back to profile CV on failure.
+      let coverLetter: string | null = (app as any).cover_letter || null;
+      let tailoredCvPdfUrl: string | null = (app as any).tailored_cv_pdf_url || null;
+      if (cv && (!coverLetter || !tailoredCvPdfUrl)) {
+        const materials = await prepareApplicationMaterials(supabase, {
+          userId: (app as any).user_id,
+          applicationId: app.id,
+          userName: profile.full_name || profile.email,
+          job,
+          cvProfile: cv,
+        });
+        coverLetter = materials.coverLetter || coverLetter;
+        tailoredCvPdfUrl = materials.tailoredCvPdfUrl || tailoredCvPdfUrl;
+      }
+
       // Re-submit via email path
       try {
         const applyRes = await fetch(
@@ -122,8 +139,8 @@ serve(async (req) => {
               sourcePlatform: job.source_platform,
               userName: profile.full_name || profile.email,
               userEmail: profile.email,
-              cvFileUrl: cv?.cv_file_url || undefined,
-              coverLetter: app.cover_letter || undefined,
+              cvFileUrl: tailoredCvPdfUrl || cv?.cv_file_url || undefined,
+              coverLetter: coverLetter || undefined,
             }),
           }
         );
