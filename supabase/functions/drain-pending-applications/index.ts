@@ -14,6 +14,7 @@ import {
   recordFailure,
   WORKER_VERSION,
 } from "../_shared/runLedger.ts";
+import { prepareApplicationMaterials } from "../_shared/materials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -85,11 +86,15 @@ serve(async (req) => {
             .single(),
           supabase
             .from("jobs")
-            .select("id, title, company, source_url, source_platform")
+            .select("id, title, company, source_url, source_platform, description, requirements, location")
             .eq("id", app.job_id)
             .single(),
           app.cv_profile_id
-            ? supabase.from("cv_profiles").select("id, cv_file_url").eq("id", app.cv_profile_id).single()
+            ? supabase
+                .from("cv_profiles")
+                .select("id, cv_file_url, summary, skills, cv_text, work_history, experience_years, seniority_level")
+                .eq("id", app.cv_profile_id)
+                .single()
             : Promise.resolve({ data: null } as any),
         ]);
 
@@ -151,6 +156,17 @@ serve(async (req) => {
         });
         await incrementRunCounter(supabase, run.id, "applications_attempted", 1);
 
+        // Tailor CV + cover letter before dispatch (reuses stored materials on retry)
+        const materials = cv
+          ? await prepareApplicationMaterials(supabase, {
+              userId: app.user_id,
+              applicationId: app.id,
+              userName: profile.full_name || profile.email,
+              job,
+              cvProfile: cv,
+            })
+          : { coverLetter: null, tailoredCvText: null, tailoredCvPdfUrl: null };
+
         const applyStarted = Date.now();
         try {
           const res = await fetch(`${supabaseUrl}/functions/v1/auto-apply`, {
@@ -170,7 +186,8 @@ serve(async (req) => {
               sourcePlatform: job.source_platform,
               userName: profile.full_name || profile.email,
               userEmail: profile.email,
-              cvFileUrl: cv?.cv_file_url || undefined,
+              cvFileUrl: materials.tailoredCvPdfUrl || cv?.cv_file_url || undefined,
+              coverLetter: materials.coverLetter || undefined,
               runId: run.id,
               correlationId: run.correlationId,
             }),

@@ -8,6 +8,7 @@ import {
   recordFailure,
   WORKER_VERSION,
 } from "../_shared/runLedger.ts";
+import { prepareApplicationMaterials } from "../_shared/materials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,7 +73,7 @@ serve(async (req) => {
 
         const { data: cvProfile } = await supabase
           .from("cv_profiles")
-          .select("id, resume_score, skills, summary, cv_file_url")
+          .select("id, resume_score, skills, summary, cv_file_url, cv_text, work_history, experience_years, seniority_level")
           .eq("user_id", user.id)
           .eq("is_active", true)
           .single();
@@ -167,7 +168,7 @@ serve(async (req) => {
 
                 const { data: insertedJobs, error: insertError } = await supabase
                   .from("jobs").insert(jobsToInsert)
-                  .select("id, title, company, source_url, source_platform");
+                  .select("id, title, company, source_url, source_platform, description, requirements, location");
 
                 if (insertError) {
                   userResult.errors.push(`Insert failed: ${insertError.message}`);
@@ -244,6 +245,31 @@ serve(async (req) => {
                           userResult.applicationsAttempted++;
                           await incrementRunCounter(supabase, run.id, "applications_attempted", 1);
 
+                          // ===== Tailor CV + cover letter for THIS job =====
+                          const materialsStarted = Date.now();
+                          await emitStep(supabase, {
+                            runId: run.id, userId: user.id, stepName: "materials_started", status: "running",
+                            applicationId: app.id, jobId: job.id,
+                            idempotencyKey: `materials_started:${app.id}`,
+                          });
+                          const materials = await prepareApplicationMaterials(supabase, {
+                            userId: user.id,
+                            applicationId: app.id,
+                            userName: user.full_name || user.email,
+                            job,
+                            cvProfile,
+                          });
+                          await emitStep(supabase, {
+                            runId: run.id, userId: user.id, stepName: "materials_completed",
+                            status: materials.coverLetter || materials.tailoredCvPdfUrl ? "completed" : "failed",
+                            applicationId: app.id, jobId: job.id, startedAt: materialsStarted,
+                            payload: {
+                              coverLetter: Boolean(materials.coverLetter),
+                              tailoredCvPdf: Boolean(materials.tailoredCvPdfUrl),
+                            },
+                            idempotencyKey: `materials_completed:${app.id}`,
+                          });
+
                           const applyStarted = Date.now();
                           await emitStep(supabase, {
                             runId: run.id, userId: user.id, stepName: "apply_started", status: "running",
@@ -256,7 +282,8 @@ serve(async (req) => {
                             jobTitle: job.title, company: job.company,
                             sourceUrl: job.source_url, sourcePlatform: job.source_platform,
                             userName: user.full_name || user.email, userEmail: user.email,
-                            cvFileUrl: cvProfile.cv_file_url || undefined,
+                            cvFileUrl: materials.tailoredCvPdfUrl || cvProfile.cv_file_url || undefined,
+                            coverLetter: materials.coverLetter || undefined,
                             runId: run.id, correlationId: run.correlationId,
                           });
 
@@ -379,7 +406,7 @@ async function triggerAutoApply(
   params: {
     userId: string; applicationId: string; jobId: string; jobTitle: string; company: string;
     sourceUrl: string; sourcePlatform: string; userName: string; userEmail: string;
-    cvFileUrl?: string; runId: string; correlationId: string;
+    cvFileUrl?: string; coverLetter?: string; runId: string; correlationId: string;
   }
 ): Promise<{ verified: boolean; message?: string }> {
   try {
@@ -393,6 +420,7 @@ async function triggerAutoApply(
         jobTitle: params.jobTitle, company: params.company,
         sourceUrl: params.sourceUrl, sourcePlatform: params.sourcePlatform,
         cvFileUrl: params.cvFileUrl,
+        coverLetter: params.coverLetter,
         runId: params.runId, correlationId: params.correlationId,
       }),
     });
