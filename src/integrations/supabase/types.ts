@@ -165,6 +165,11 @@ export type Database = {
           response_received_at: string | null
           retry_count: number | null
           status: string | null
+          tailored_cv_changes: string[] | null
+          tailored_cv_generated_at: string | null
+          tailored_cv_keywords: string[] | null
+          tailored_cv_pdf_url: string | null
+          tailored_cv_text: string | null
           updated_at: string | null
           user_id: string
         }
@@ -206,6 +211,11 @@ export type Database = {
           response_received_at?: string | null
           retry_count?: number | null
           status?: string | null
+          tailored_cv_changes?: string[] | null
+          tailored_cv_generated_at?: string | null
+          tailored_cv_keywords?: string[] | null
+          tailored_cv_pdf_url?: string | null
+          tailored_cv_text?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -247,6 +257,11 @@ export type Database = {
           response_received_at?: string | null
           retry_count?: number | null
           status?: string | null
+          tailored_cv_changes?: string[] | null
+          tailored_cv_generated_at?: string | null
+          tailored_cv_keywords?: string[] | null
+          tailored_cv_pdf_url?: string | null
+          tailored_cv_text?: string | null
           updated_at?: string | null
           user_id?: string
         }

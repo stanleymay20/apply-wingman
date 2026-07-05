@@ -73,7 +73,7 @@ serve(async (req) => {
 
         const { data: cvProfile } = await supabase
           .from("cv_profiles")
-          .select("id, resume_score, skills, summary, cv_file_url, cv_text, work_history, experience_years, seniority_level")
+          .select("id, resume_score, skills, summary, cv_file_url, work_history, experience_years, seniority_level")
           .eq("user_id", user.id)
           .eq("is_active", true)
           .single();
