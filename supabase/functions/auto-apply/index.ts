@@ -433,10 +433,10 @@ ${userName}`;
 
       // Build attachments array
       const attachments: { filename: string; path: string }[] = [];
-      if (cvFileUrl) {
+      if (effectiveCvFileUrl) {
         attachments.push({
           filename: `${userName.replace(/\s+/g, "_")}_Resume.pdf`,
-          path: cvFileUrl,
+          path: effectiveCvFileUrl,
         });
       }
 
