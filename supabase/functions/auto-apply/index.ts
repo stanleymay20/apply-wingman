@@ -263,6 +263,64 @@ serve(async (req) => {
       details: { method },
     });
 
+    // ===== PER-JOB TAILORED MATERIALS =====
+    // Ensure EVERY application (including manual/bulk from the UI) applies with a
+    // job-specific tailored CV + cover letter — never a generic one. Materials
+    // are cached on the application row, so this is idempotent and cheap on
+    // retries or when a caller (scheduled-automation / drain) already tailored.
+    let effectiveCvFileUrl = cvFileUrl;
+    let effectiveCoverLetter = coverLetter;
+    try {
+      const [{ data: jobRow }, { data: cvRow }] = await Promise.all([
+        supabase
+          .from("jobs")
+          .select("id, title, company, description, requirements, location")
+          .eq("id", jobId)
+          .maybeSingle(),
+        (async () => {
+          const { data: app } = await supabase
+            .from("applications")
+            .select("cv_profile_id")
+            .eq("id", applicationId)
+            .maybeSingle();
+          const cvQuery = supabase
+            .from("cv_profiles")
+            .select("id, cv_file_url, summary, skills, cv_text, work_history, experience_years, seniority_level");
+          if (app?.cv_profile_id) {
+            return await cvQuery.eq("id", app.cv_profile_id).maybeSingle();
+          }
+          return await cvQuery
+            .eq("user_id", userId)
+            .eq("is_active", true)
+            .maybeSingle();
+        })(),
+      ]);
+
+      if (jobRow && cvRow) {
+        const materials = await prepareApplicationMaterials(supabase, {
+          userId,
+          applicationId,
+          userName,
+          job: {
+            id: jobRow.id,
+            title: jobRow.title ?? jobTitle,
+            company: jobRow.company ?? company,
+            description: jobRow.description,
+            requirements: jobRow.requirements,
+            location: jobRow.location,
+          },
+          cvProfile: cvRow,
+        });
+        // Prefer freshly tailored materials over any generic ones passed in.
+        if (materials.tailoredCvPdfUrl) effectiveCvFileUrl = materials.tailoredCvPdfUrl;
+        else if (!effectiveCvFileUrl && cvRow.cv_file_url) effectiveCvFileUrl = cvRow.cv_file_url;
+        if (materials.coverLetter) effectiveCoverLetter = materials.coverLetter;
+      }
+    } catch (matErr) {
+      // Best-effort: never block the apply on tailoring failure.
+      console.warn(`[auto-apply] tailoring failed for app ${applicationId}:`, matErr);
+    }
+
     let result: ApplyResult;
 
     // Method 1: Email Application
