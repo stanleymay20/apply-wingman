@@ -5,6 +5,7 @@ import { Resend } from "https://esm.sh/resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifyFromLifecycle } from "../_shared/notifications.ts";
 import { classifyError, computeNextRetryAt, loadRetryConfig } from "../_shared/retry.ts";
+import { prepareApplicationMaterials } from "../_shared/materials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
