@@ -655,7 +655,7 @@ ${userName}`;
           ? `✅ ATS submission confirmed: ${result.message}`
           : `📝 Action needed — open ${result.applicationUrl || sourceUrl} to finish the ATS form`,
         details: { applicationUrl: result.applicationUrl, sourcePlatform, apiSubmitted: result.apiSubmitted },
-        fields: { application_method: "ats_api" },
+        fields: { application_method: "form_submit" },
       });
       result.deliveryStatus = finalStatus === "delivered" ? "delivered" : "manual_action_required";
       result.message = `${result.message} (status: ${finalStatus})`;
