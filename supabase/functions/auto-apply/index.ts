@@ -392,7 +392,7 @@ serve(async (req) => {
       // ===== END DELIVERY MODE ROUTING =====
 
       // Generate professional application email using AI
-      let emailBody = coverLetter || "";
+      let emailBody = effectiveCoverLetter || "";
       if (!emailBody) {
         try {
           emailBody = await callAI({
