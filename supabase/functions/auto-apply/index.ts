@@ -285,7 +285,7 @@ serve(async (req) => {
             .maybeSingle();
           const cvQuery = supabase
             .from("cv_profiles")
-            .select("id, cv_file_url, summary, skills, cv_text, work_history, experience_years, seniority_level");
+            .select("id, cv_file_url, summary, skills, work_history, experience_years, seniority_level");
           if (app?.cv_profile_id) {
             return await cvQuery.eq("id", app.cv_profile_id).maybeSingle();
           }
