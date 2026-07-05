@@ -39,7 +39,7 @@ serve(async (req) => {
       .select(`
         id, user_id, job_id, cover_letter, tailored_cv_pdf_url,
         jobs!inner(id, title, company, source_url, source_platform, description, requirements, location, recruiter_email, recruiter_email_confidence, recruiter_email_extracted_at),
-        profiles!inner(email, full_name, automation_status, daily_application_cap, cv_profiles!inner(id, cv_file_url, summary, skills, cv_text, work_history, experience_years, seniority_level))
+        profiles!inner(email, full_name, automation_status, daily_application_cap, cv_profiles!inner(id, cv_file_url, summary, skills, work_history, experience_years, seniority_level))
       `)
       .eq("status", "manual_action_required")
       .eq("profiles.automation_status", "running")
