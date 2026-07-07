@@ -42,6 +42,20 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // AI health preflight — matching requires AI scoring.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ error: e.message, code: "AI_NOT_CONFIGURED" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
+
     const { jobId, cvProfileId, jobData, cvData } = await req.json();
 
     // Fetch job and CV data if IDs are provided
