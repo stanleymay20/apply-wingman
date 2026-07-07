@@ -1,4 +1,4 @@
-import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
+import { callAI, callAIJson, AIRateLimitError, AICreditsError, preflightAI, AIError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
