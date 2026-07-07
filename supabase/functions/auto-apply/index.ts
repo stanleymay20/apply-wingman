@@ -1,4 +1,4 @@
-import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
+import { callAI, callAIJson, AIRateLimitError, AICreditsError, preflightAI, AIError } from "../_shared/aiClient.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
@@ -193,6 +193,21 @@ serve(async (req) => {
         JSON.stringify({ success: false, error: validation.error }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // AI health preflight — per-job CV/cover-letter tailoring requires AI.
+    // Without a configured provider we cannot produce tailored materials, so
+    // block rather than silently sending a generic application.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ success: false, error: e.message, code: "AI_NOT_CONFIGURED", deliveryStatus: "failed" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
     }
 
     const request = validation.data;

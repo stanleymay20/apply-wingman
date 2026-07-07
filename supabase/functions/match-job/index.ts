@@ -1,4 +1,4 @@
-import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
+import { callAI, callAIJson, AIRateLimitError, AICreditsError, preflightAI, AIError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -41,6 +41,20 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // AI health preflight — matching requires AI scoring.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ error: e.message, code: "AI_NOT_CONFIGURED" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
 
     const { jobId, cvProfileId, jobData, cvData } = await req.json();
 

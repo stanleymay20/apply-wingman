@@ -22,6 +22,7 @@ import AdminRuns from "./pages/admin/AdminRuns";
 import AdminFailures from "./pages/admin/AdminFailures";
 import AdminDelivery from "./pages/admin/AdminDelivery";
 import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
+import AdminAIProvider from "./pages/admin/AdminAIProvider";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -93,6 +94,7 @@ const App = () => (
               <Route path="/admin/failures" element={<AdminFailures />} />
               <Route path="/admin/delivery" element={<AdminDelivery />} />
               <Route path="/admin/system-health" element={<AdminSystemHealth />} />
+              <Route path="/admin/ai-provider" element={<AdminAIProvider />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GlobalProviders>

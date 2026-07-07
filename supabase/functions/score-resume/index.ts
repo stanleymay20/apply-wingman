@@ -1,4 +1,4 @@
-import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
+import { callAI, callAIJson, AIRateLimitError, AICreditsError, preflightAI, AIError } from "../_shared/aiClient.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -46,6 +46,20 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // AI health preflight — bail early if no provider is configured at all.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ success: false, unavailable: true, code: "AI_NOT_CONFIGURED", error: e.message, retryable: false }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
 
     const systemPrompt = `You are an expert ATS (Applicant Tracking System) analyzer and resume reviewer. Analyze the provided resume/CV and return ONLY valid JSON with this exact structure:
 {

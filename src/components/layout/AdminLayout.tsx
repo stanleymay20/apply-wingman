@@ -4,13 +4,14 @@ import { Layout } from "./Layout";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { cn } from "@/lib/utils";
-import { Activity, AlertTriangle, Mail, HeartPulse } from "lucide-react";
+import { Activity, AlertTriangle, Mail, HeartPulse, BrainCircuit } from "lucide-react";
 
 const TABS = [
   { to: "/admin/runs", label: "Runs", icon: Activity },
   { to: "/admin/failures", label: "Failures", icon: AlertTriangle },
   { to: "/admin/delivery", label: "Delivery", icon: Mail },
   { to: "/admin/system-health", label: "System Health", icon: HeartPulse },
+  { to: "/admin/ai-provider", label: "AI Provider", icon: BrainCircuit },
 ];
 
 export function AdminLayout({ children }: { children: ReactNode }) {

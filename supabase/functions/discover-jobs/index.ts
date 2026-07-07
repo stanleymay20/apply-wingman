@@ -1,4 +1,4 @@
-import { callAI, callAIJson, AIRateLimitError, AICreditsError } from "../_shared/aiClient.ts";
+import { callAI, callAIJson, AIRateLimitError, AICreditsError, preflightAI, AIError } from "../_shared/aiClient.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -132,7 +132,20 @@ serve(async (req) => {
       );
     }
 
-    // Parse and validate input
+    // AI health preflight — job parsing/classification needs AI, so don't spend
+    // Firecrawl credits if no AI provider is configured.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ success: false, error: e.message, code: "AI_NOT_CONFIGURED" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
     const rawParams = await req.json();
     const validation = validateDiscoveryParams(rawParams);
     
