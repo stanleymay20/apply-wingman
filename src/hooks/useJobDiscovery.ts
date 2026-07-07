@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { useCVProfile } from "./useCVProfile";
@@ -32,6 +32,28 @@ export interface DiscoveryRunStatus {
   duplicatesSkipped: number;
   error: string | null;
   status: "success" | "partial" | "error";
+}
+
+// Discovery run status must be shared across every useJobDiscovery() instance:
+// the dialog and saved-searches panel trigger runs while Jobs.tsx renders the
+// status panel, and per-instance useState left the panel permanently empty.
+const LAST_RUN_QUERY_KEY = ["discovery-last-run"];
+
+// The edge function can legitimately run for a while (multiple Firecrawl
+// searches + AI enhancement), but without a client timeout a hung function
+// leaves the UI silently stuck forever.
+const DISCOVERY_TIMEOUT_MS = 120_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s — the edge function did not respond. Check the function logs in Lovable Cloud.`)),
+        ms
+      )
+    ),
+  ]);
 }
 
 // Normalize URL to detect duplicates across slight variations
@@ -80,8 +102,23 @@ export function useJobDiscovery() {
   const { user } = useAuth();
   const { cvProfile } = useCVProfile();
   const queryClient = useQueryClient();
-  const [lastRun, setLastRun] = useState<DiscoveryRunStatus | null>(null);
   const [isMatching, setIsMatching] = useState(false);
+
+  const { data: lastRun = null } = useQuery<DiscoveryRunStatus | null>({
+    queryKey: LAST_RUN_QUERY_KEY,
+    queryFn: () => null,
+    enabled: false,
+    initialData: null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  const setLastRun = useCallback(
+    (status: DiscoveryRunStatus | null) => {
+      queryClient.setQueryData(LAST_RUN_QUERY_KEY, status);
+    },
+    [queryClient]
+  );
 
   // Trigger job matching for newly discovered jobs
   const matchJobsInBackground = useCallback(async (jobIds: string[]) => {
@@ -92,9 +129,11 @@ export function useJobDiscovery() {
     
     for (const jobId of jobIds) {
       try {
-        const { data, error } = await supabase.functions.invoke("match-job", {
-          body: { jobId, cvProfileId: cvProfile.id },
-        });
+        const { data, error } = await withTimeout(
+          supabase.functions.invoke("match-job", { body: { jobId, cvProfileId: cvProfile.id } }),
+          DISCOVERY_TIMEOUT_MS,
+          "Job matching"
+        );
         
         if (error) {
           console.error(`Match error for job ${jobId}:`, error);
@@ -167,9 +206,11 @@ export function useJobDiscovery() {
       console.log("Calling discover-jobs with:", params);
 
       try {
-        const { data, error } = await supabase.functions.invoke("discover-jobs", {
-          body: params,
-        });
+        const { data, error } = await withTimeout(
+          supabase.functions.invoke("discover-jobs", { body: params }),
+          DISCOVERY_TIMEOUT_MS,
+          "Job discovery"
+        );
 
         console.log("discover-jobs response:", { data, error });
 
