@@ -195,6 +195,21 @@ serve(async (req) => {
       );
     }
 
+    // AI health preflight — per-job CV/cover-letter tailoring requires AI.
+    // Without a configured provider we cannot produce tailored materials, so
+    // block rather than silently sending a generic application.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ success: false, error: e.message, code: "AI_NOT_CONFIGURED", deliveryStatus: "failed" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
     const request = validation.data;
     const {
       applicationId,
