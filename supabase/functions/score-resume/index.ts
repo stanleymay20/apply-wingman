@@ -47,6 +47,20 @@ serve(async (req) => {
       );
     }
 
+    // AI health preflight — bail early if no provider is configured at all.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ success: false, unavailable: true, code: "AI_NOT_CONFIGURED", error: e.message, retryable: false }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
+
     const systemPrompt = `You are an expert ATS (Applicant Tracking System) analyzer and resume reviewer. Analyze the provided resume/CV and return ONLY valid JSON with this exact structure:
 {
   "score": <number 0-100, ATS compatibility score>,
