@@ -141,17 +141,156 @@ function resolveProviderRaw(explicitOverride?: string): ProviderConfig {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Admin-controlled provider selection (system_settings.ai_provider / ai_model)
+// ---------------------------------------------------------------------------
+
+let _cfgCache: AIConfigOverride | null = null;
+let _cfgCacheAt = 0;
+const CFG_TTL_MS = 30_000;
+
+/**
+ * Load the admin-selected provider/model from system_settings via the REST API.
+ * Cached for 30s. Falls back silently to env vars when unavailable.
+ */
+export async function loadDbOverrides(): Promise<AIConfigOverride> {
+  if (_cfgCache && Date.now() - _cfgCacheAt < CFG_TTL_MS) return _cfgCache;
+
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return {};
+
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/system_settings?key=in.(ai_provider,ai_model)&select=key,value`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    );
+    if (!res.ok) {
+      await res.body?.cancel();
+      return {};
+    }
+    const rows: Array<{ key: string; value: unknown }> = await res.json();
+    const override: AIConfigOverride = {};
+    for (const row of rows) {
+      // value is jsonb; a string setting arrives as a JS string already
+      const v = typeof row.value === "string" ? row.value : undefined;
+      if (row.key === "ai_provider" && v) override.provider = v;
+      if (row.key === "ai_model" && v) override.model = v;
+    }
+    _cfgCache = override;
+    _cfgCacheAt = Date.now();
+    return override;
+  } catch (_e) {
+    return {};
+  }
+}
+
+/** The provider names that currently have a usable credential/config in env. */
+export function getConfiguredProviders(): string[] {
+  const out: string[] = [];
+  if (Deno.env.get("LOCAL_LLM_BASE_URL") && Deno.env.get("LOCAL_LLM_API_KEY")) out.push("local");
+  if (Deno.env.get("GROQ_API_KEY")) out.push("groq");
+  if (Deno.env.get("OPENAI_API_KEY")) out.push("openai");
+  if (Deno.env.get("GOOGLE_API_KEY")) out.push("google");
+  if (Deno.env.get("LOVABLE_API_KEY")) out.push("lovable");
+  return out;
+}
+
+/**
+ * Cheap preflight — throws a clear AIError if NO provider is configured, so
+ * callers (discover-jobs, auto-apply, score-resume, match-job) can bail out
+ * BEFORE spending Firecrawl/DB work when AI is guaranteed to fail.
+ * Does not make a network call.
+ */
+export async function preflightAI(): Promise<{ provider: string; model: string }> {
+  const override = await loadDbOverrides();
+  const configured = getConfiguredProviders();
+  if (configured.length === 0) {
+    throw new AIError(
+      "No AI provider is configured. An admin must set GROQ_API_KEY (recommended) or another provider key in the AI Provider settings."
+    );
+  }
+  // Resolve the effective provider; resolveProviderRaw throws if the selected
+  // provider's key is missing — surface that as a clear error.
+  const cfg = resolveProvider(override);
+  const host = (() => {
+    try { return new URL(cfg.baseUrl).hostname; } catch { return "custom"; }
+  })();
+  const providerName =
+    host.includes("groq") ? "groq"
+      : host.includes("googleapis") ? "google"
+      : host.includes("openai") ? "openai"
+      : host.includes("gateway.lovable") ? "lovable"
+      : (override.provider ?? Deno.env.get("AI_PROVIDER")) === "local" ? "local"
+      : "custom";
+  return { provider: providerName, model: cfg.defaultModel };
+}
+
+export interface ProviderHealth {
+  provider: string;
+  configured: boolean;
+  reachable: boolean;
+  status: "ok" | "degraded" | "down" | "not_configured";
+  detail: string;
+  latencyMs?: number;
+}
+
+/**
+ * Live health check for a single provider — makes a tiny 1-token request.
+ * Rate-limit / credit errors count as "degraded" (key works, quota is the issue).
+ */
+export async function pingProvider(name: string): Promise<ProviderHealth> {
+  const configured = getConfiguredProviders().includes(name);
+  if (!configured) {
+    return { provider: name, configured: false, reachable: false, status: "not_configured", detail: "No credential configured" };
+  }
+  const started = Date.now();
+  try {
+    const cfg = resolveProviderRaw(name);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (cfg.authMode === "lovable") {
+      headers["Lovable-API-Key"] = cfg.apiKey;
+      headers["X-Lovable-AIG-SDK"] = "custom-edge-fetch";
+    } else {
+      headers.Authorization = `Bearer ${cfg.apiKey}`;
+    }
+    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: cfg.defaultModel,
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1,
+        temperature: 0,
+      }),
+    });
+    const latencyMs = Date.now() - started;
+    if (res.ok) {
+      await res.body?.cancel();
+      return { provider: name, configured: true, reachable: true, status: "ok", detail: `Responded in ${latencyMs}ms`, latencyMs };
+    }
+    const text = await res.text().catch(() => "");
+    if (res.status === 429) return { provider: name, configured: true, reachable: true, status: "degraded", detail: "Rate limited (key valid)", latencyMs };
+    if (res.status === 402) return { provider: name, configured: true, reachable: true, status: "degraded", detail: "Credits/quota exhausted (key valid)", latencyMs };
+    if (res.status === 401 || res.status === 403) return { provider: name, configured: true, reachable: false, status: "down", detail: `Auth rejected (${res.status})`, latencyMs };
+    return { provider: name, configured: true, reachable: false, status: "down", detail: `HTTP ${res.status}: ${text.slice(0, 120)}`, latencyMs };
+  } catch (e) {
+    return { provider: name, configured: true, reachable: false, status: "down", detail: e instanceof Error ? e.message.slice(0, 160) : "Unreachable", latencyMs: Date.now() - started };
+  }
+}
+
 /**
  * Call the configured AI provider and return the text content of the first choice.
  * Throws on HTTP error or empty response.
  */
 export async function callAI(opts: CallAIOptions): Promise<string> {
+  const override = await loadDbOverrides();
   try {
-    return await callAIWithProvider(resolveProvider(), opts);
+    return await callAIWithProvider(resolveProvider(override), opts);
   } catch (err) {
     // If the primary provider is rate-limited, fall back to the Lovable gateway.
     const lovable = Deno.env.get("LOVABLE_API_KEY");
-    const isPrimaryLovable = Deno.env.get("AI_PROVIDER") === "lovable";
+    const isPrimaryLovable = (override.provider ?? Deno.env.get("AI_PROVIDER")) === "lovable";
     if (err instanceof AIRateLimitError && lovable && !isPrimaryLovable) {
       console.log("[aiClient] primary provider rate-limited — falling back to Lovable gateway");
       return await callAIWithProvider(
