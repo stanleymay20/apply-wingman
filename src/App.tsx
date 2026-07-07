@@ -22,6 +22,7 @@ import AdminRuns from "./pages/admin/AdminRuns";
 import AdminFailures from "./pages/admin/AdminFailures";
 import AdminDelivery from "./pages/admin/AdminDelivery";
 import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
+import AdminAIProvider from "./pages/admin/AdminAIProvider";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
