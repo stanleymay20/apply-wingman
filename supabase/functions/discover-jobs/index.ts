@@ -66,6 +66,243 @@ function isAggregatorPage(url: string, title: string): boolean {
   return AGGREGATOR_TITLE_PATTERNS.some((re) => re.test(title));
 }
 
+// ===== Free JSON job sources (no API key, no quota) =====
+// These run alongside Firecrawl so an exhausted Firecrawl quota degrades
+// discovery instead of zeroing it out. All results are pushed through the
+// same aggregator/keyword filtering pipeline as Firecrawl results.
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesAnyKeyword(title: string, description: string, keywords: string[]): boolean {
+  const titleLower = title.toLowerCase();
+  const descLower = description.toLowerCase().slice(0, 2000);
+  return keywords.some((keyword) => {
+    const kw = keyword.toLowerCase();
+    const words = kw.split(/\s+/).filter((w) => w.length > 2);
+    return (
+      titleLower.includes(kw) ||
+      descLower.includes(kw) ||
+      words.some((w) => titleLower.includes(w) || descLower.includes(w))
+    );
+  });
+}
+
+async function fetchJsonWithTimeout(url: string, timeoutMs = 10000): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "Accept": "application/json", "User-Agent": "apply-wingman/1.0" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchArbeitnowJobs(): Promise<DiscoveredJob[]> {
+  const data = (await fetchJsonWithTimeout("https://www.arbeitnow.com/api/job-board-api")) as {
+    data?: unknown[];
+  };
+  const items = Array.isArray(data?.data) ? data.data : [];
+  return items
+    .map((raw): DiscoveredJob => {
+      const item = raw as Record<string, unknown>;
+      return {
+        title: String(item.title ?? "").trim(),
+        company: String(item.company_name ?? "").trim() || "Unknown Company",
+        location: String(item.location ?? "") || (item.remote ? "Remote" : ""),
+        source_platform: "arbeitnow",
+        source_url: String(item.url ?? ""),
+        description: htmlToText(String(item.description ?? "")).slice(0, 2000),
+        requirements: Array.isArray(item.tags) ? item.tags.slice(0, 5).map(String) : [],
+        is_remote: Boolean(item.remote),
+        job_type: Array.isArray(item.job_types) && item.job_types.length > 0
+          ? String(item.job_types[0]).toLowerCase()
+          : "full-time",
+      };
+    })
+    .filter((j) => j.title && j.source_url);
+}
+
+async function fetchRemoteOkJobs(): Promise<DiscoveredJob[]> {
+  const data = await fetchJsonWithTimeout("https://remoteok.com/api");
+  // First array element is a legal notice, and lacks position/id fields.
+  const items = (Array.isArray(data) ? data : []).filter(
+    (x): x is Record<string, unknown> =>
+      !!x && typeof x === "object" && "id" in x && ("position" in x || "title" in x)
+  );
+  return items
+    .map((item): DiscoveredJob => ({
+      title: String(item.position ?? item.title ?? "").trim(),
+      company: String(item.company ?? "").trim() || "Unknown Company",
+      location: String(item.location ?? "") || "Remote",
+      source_platform: "remoteok",
+      source_url: String(item.url ?? ""),
+      description: htmlToText(String(item.description ?? "")).slice(0, 2000),
+      requirements: Array.isArray(item.tags) ? item.tags.slice(0, 5).map(String) : [],
+      is_remote: true,
+      job_type: "full-time",
+    }))
+    .filter((j) => j.title && j.source_url);
+}
+
+// Collect company board slugs from the user's stored job URLs so we can
+// re-query those companies' public posting APIs for free.
+async function collectBoardSlugs(
+  // deno-lint-ignore no-explicit-any
+  supabaseService: any,
+  userId: string,
+  urlLikeFilter: string,
+  slugPattern: RegExp,
+  reservedSlugs: Set<string>,
+): Promise<Map<string, string>> {
+  const { data: rows } = await supabaseService
+    .from("jobs")
+    .select("source_url, company")
+    .eq("user_id", userId)
+    .ilike("source_url", urlLikeFilter)
+    .limit(200);
+  const slugs = new Map<string, string>();
+  for (const row of rows ?? []) {
+    const m = String(row.source_url ?? "").match(slugPattern);
+    if (m?.[1] && !reservedSlugs.has(m[1].toLowerCase())) {
+      const company = row.company && row.company !== "Unknown Company" ? row.company : m[1];
+      if (!slugs.has(m[1])) slugs.set(m[1], company);
+    }
+  }
+  return slugs;
+}
+
+const MAX_BOARDS_PER_SOURCE = 5;
+
+async function refreshBoards(
+  slugs: Map<string, string>,
+  fetchBoard: (slug: string, company: string) => Promise<DiscoveredJob[]>,
+): Promise<DiscoveredJob[]> {
+  const entries = [...slugs.entries()].slice(0, MAX_BOARDS_PER_SOURCE);
+  const results = await Promise.all(
+    entries.map(async ([slug, company]) => {
+      try {
+        return await fetchBoard(slug, company);
+      } catch (e) {
+        console.warn(`Board refresh failed for "${slug}":`, e instanceof Error ? e.message : e);
+        return [];
+      }
+    })
+  );
+  return results.flat().filter((j) => j.title && j.source_url);
+}
+
+// deno-lint-ignore no-explicit-any
+async function refreshGreenhouseBoards(supabaseService: any, userId: string): Promise<DiscoveredJob[]> {
+  const slugs = await collectBoardSlugs(
+    supabaseService,
+    userId,
+    "%greenhouse.io%",
+    /greenhouse\.io\/([A-Za-z0-9_-]+)\/jobs\//i,
+    new Set(["v1", "boards", "embed", "api"]),
+  );
+  return refreshBoards(slugs, async (token, company) => {
+    const data = (await fetchJsonWithTimeout(
+      `https://boards-api.greenhouse.io/v1/boards/${token}/jobs?content=true`
+    )) as { jobs?: unknown[] };
+    return (data?.jobs ?? []).map((raw): DiscoveredJob => {
+      const j = raw as Record<string, unknown>;
+      const locationName = String((j.location as Record<string, unknown> | undefined)?.name ?? "");
+      return {
+        title: String(j.title ?? "").trim(),
+        company,
+        location: locationName,
+        source_platform: "greenhouse",
+        source_url: String(j.absolute_url ?? ""),
+        // Greenhouse returns HTML-escaped markup in `content`
+        description: htmlToText(String(j.content ?? "")).slice(0, 2000),
+        requirements: [],
+        is_remote: /remote/i.test(locationName),
+        job_type: "full-time",
+      };
+    });
+  });
+}
+
+// deno-lint-ignore no-explicit-any
+async function refreshLeverBoards(supabaseService: any, userId: string): Promise<DiscoveredJob[]> {
+  const slugs = await collectBoardSlugs(
+    supabaseService,
+    userId,
+    "%jobs.lever.co%",
+    /jobs\.lever\.co\/([A-Za-z0-9._-]+)/i,
+    new Set(["v0", "api"]),
+  );
+  return refreshBoards(slugs, async (slug, company) => {
+    const data = await fetchJsonWithTimeout(`https://api.lever.co/v0/postings/${slug}?mode=json`);
+    return (Array.isArray(data) ? data : []).map((raw): DiscoveredJob => {
+      const p = raw as Record<string, unknown>;
+      const categories = (p.categories ?? {}) as Record<string, unknown>;
+      const locationName = String(categories.location ?? "");
+      return {
+        title: String(p.text ?? "").trim(),
+        company,
+        location: locationName,
+        source_platform: "lever",
+        source_url: String(p.hostedUrl ?? ""),
+        description: htmlToText(String(p.descriptionPlain ?? p.description ?? "")).slice(0, 2000),
+        requirements: [],
+        is_remote: /remote/i.test(locationName) || String(p.workplaceType ?? "") === "remote",
+        job_type: /part.?time/i.test(String(categories.commitment ?? "")) ? "part-time" : "full-time",
+      };
+    });
+  });
+}
+
+// deno-lint-ignore no-explicit-any
+async function refreshSmartRecruitersBoards(supabaseService: any, userId: string): Promise<DiscoveredJob[]> {
+  const slugs = await collectBoardSlugs(
+    supabaseService,
+    userId,
+    "%jobs.smartrecruiters.com%",
+    /jobs\.smartrecruiters\.com\/([A-Za-z0-9._-]+)/i,
+    new Set(["api"]),
+  );
+  return refreshBoards(slugs, async (slug, company) => {
+    const data = (await fetchJsonWithTimeout(
+      `https://api.smartrecruiters.com/v1/companies/${slug}/postings`
+    )) as { content?: unknown[] };
+    return (data?.content ?? []).map((raw): DiscoveredJob => {
+      const p = raw as Record<string, unknown>;
+      const loc = (p.location ?? {}) as Record<string, unknown>;
+      const locationName = [loc.city, loc.country].filter(Boolean).map(String).join(", ");
+      return {
+        title: String(p.name ?? "").trim(),
+        company,
+        location: locationName,
+        source_platform: "smartrecruiters",
+        source_url: `https://jobs.smartrecruiters.com/${slug}/${String(p.id ?? "")}`,
+        // The postings list endpoint has no job description; keyword matching
+        // falls back to the title for these.
+        description: "",
+        requirements: [],
+        is_remote: Boolean(loc.remote) || /remote/i.test(locationName),
+        job_type: "full-time",
+      };
+    });
+  });
+}
+
 // Input validation
 function validateDiscoveryParams(params: unknown): { valid: boolean; error?: string; data?: DiscoveryParams } {
   if (!params || typeof params !== "object") {
@@ -163,13 +400,12 @@ serve(async (req) => {
     // ===== END AUTHENTICATION =====
 
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+    const sourceReport: Record<string, string> = {};
 
     if (!firecrawlKey) {
-      console.error("FIRECRAWL_API_KEY not configured");
-      return new Response(
-        JSON.stringify({ success: false, error: "Firecrawl not configured. Please connect Firecrawl in Settings → Connectors." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      // Firecrawl is one source among several now — keep going without it.
+      console.error("FIRECRAWL_API_KEY not configured — skipping Firecrawl search");
+      sourceReport.firecrawl = "not_configured";
     }
 
     // AI health preflight — job parsing/classification needs AI, so don't spend
@@ -206,6 +442,48 @@ serve(async (req) => {
     let searchAttempts = 0;
     let aggregatorsFiltered = 0;
 
+    // Shared filtering pipeline for non-Firecrawl sources: dedupe, aggregator
+    // filter, and keyword relevance — same gates the Firecrawl results face.
+    const addCandidateJob = (job: DiscoveredJob): boolean => {
+      if (!job.source_url || seenUrls.has(job.source_url)) return false;
+      seenUrls.add(job.source_url);
+      if (isAggregatorPage(job.source_url, job.title)) {
+        aggregatorsFiltered++;
+        return false;
+      }
+      if (!matchesAnyKeyword(job.title, job.description, keywords)) return false;
+      allJobs.push(job);
+      return true;
+    };
+
+    // Kick off the free JSON sources in parallel with the Firecrawl loop.
+    // Each source catches its own failure so it can never abort the run.
+    const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
+    const runSource = (name: string, fn: () => Promise<DiscoveredJob[]>) =>
+      fn()
+        .then((jobs) => ({ name, jobs }))
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`Source "${name}" failed:`, msg);
+          sourceReport[name] = `failed: ${msg}`;
+          return { name, jobs: [] as DiscoveredJob[] };
+        });
+
+    const freeSourceTasks = [
+      // Always-on, quota-free feeds (Arbeitnow is Germany/EU-focused).
+      runSource("arbeitnow", fetchArbeitnowJobs),
+      runSource("remoteok", fetchRemoteOkJobs),
+    ];
+    if (platforms.length === 0 || platforms.includes("greenhouse")) {
+      freeSourceTasks.push(runSource("greenhouse_refresh", () => refreshGreenhouseBoards(supabaseService, userId)));
+    }
+    if (platforms.length === 0 || platforms.includes("lever")) {
+      freeSourceTasks.push(runSource("lever_refresh", () => refreshLeverBoards(supabaseService, userId)));
+    }
+    if (platforms.length === 0 || platforms.includes("smartrecruiters")) {
+      freeSourceTasks.push(runSource("smartrecruiters_refresh", () => refreshSmartRecruitersBoards(supabaseService, userId)));
+    }
+
     // Build search queries for each platform
     const platformSites: Record<string, string> = {
       linkedin: "site:linkedin.com/jobs",
@@ -222,7 +500,8 @@ serve(async (req) => {
       : "";
 
     // Search for each keyword - use exact phrase matching for precision
-    for (const keyword of keywords.slice(0, 5)) {
+    // (skipped entirely when Firecrawl isn't configured)
+    for (const keyword of firecrawlKey ? keywords.slice(0, 5) : []) {
       // Build platform filter - prioritize user-selected platforms
       const selectedPlatformFilters = platforms
         .map((p) => platformSites[p])
@@ -409,18 +688,44 @@ serve(async (req) => {
       }
     }
 
-    // If every keyword search failed, report gracefully (200) so the client can show a
-    // friendly message instead of blank-screening on a 5xx.
-    if (searchAttempts > 0 && searchErrors.length === searchAttempts && allJobs.length === 0) {
-      const creditsExhausted = searchErrors.some((e) => e.status === 402);
+    // Record Firecrawl's outcome — a failure here no longer aborts the run.
+    if (firecrawlKey) {
+      if (searchAttempts > 0 && searchErrors.length === searchAttempts) {
+        sourceReport.firecrawl = searchErrors.some((e) => e.status === 402)
+          ? "quota_exceeded"
+          : `failed: ${searchErrors[0]?.message ?? "all searches failed"}`;
+      } else {
+        sourceReport.firecrawl = `ok: ${allJobs.length} jobs`;
+      }
+    }
+
+    // Merge the free-source results through the shared filtering pipeline.
+    const freeResults = await Promise.all(freeSourceTasks);
+    for (const { name, jobs } of freeResults) {
+      if (sourceReport[name]) continue; // fetch failed, already recorded
+      let added = 0;
+      for (const candidate of jobs) {
+        if (addCandidateJob(candidate)) added++;
+      }
+      sourceReport[name] = `ok: ${added} jobs`;
+    }
+
+    console.info("Source report:", sourceReport);
+
+    // Only report total failure when no source succeeded at all — a Firecrawl
+    // quota error with working free sources is a partial success.
+    const anySourceSucceeded = Object.values(sourceReport).some((s) => s.startsWith("ok"));
+    if (allJobs.length === 0 && !anySourceSucceeded) {
+      const creditsExhausted = sourceReport.firecrawl === "quota_exceeded";
       return new Response(
         JSON.stringify({
           success: false,
           error: creditsExhausted
-            ? "Job discovery is temporarily unavailable: the Firecrawl search quota is exhausted. Add credits to your Firecrawl plan to resume discovery."
-            : "All job searches failed. Please try again shortly.",
+            ? "Job discovery failed: the Firecrawl search quota is exhausted and the free job sources also returned errors. Try again shortly."
+            : "All job sources failed. Please try again shortly.",
           code: creditsExhausted ? "FIRECRAWL_CREDITS_EXHAUSTED" : "DISCOVERY_FAILED",
           unavailable: true,
+          sources: sourceReport,
           searchErrors,
           jobs: [],
           userId,
@@ -428,7 +733,6 @@ serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
 
     console.info(`Discovered ${allJobs.length} real jobs total (${aggregatorsFiltered} aggregator pages filtered)`);
 
@@ -467,6 +771,7 @@ ${JSON.stringify(topJobs.map((j) => ({ title: j.title, company: j.company, descr
         jobs: allJobs,
         userId,
         aggregatorsFiltered,
+        sources: sourceReport,
         ...(searchErrors.length > 0 && { searchErrors }),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

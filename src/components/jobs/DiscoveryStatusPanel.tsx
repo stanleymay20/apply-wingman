@@ -108,6 +108,28 @@ export function DiscoveryStatusPanel({ lastRun, onDismiss, isMatching }: Discove
           </div>
         </div>
 
+        {/* Per-source outcomes */}
+        {lastRun.sources && Object.keys(lastRun.sources).length > 0 && (
+          <div className="text-xs">
+            <p className="text-muted-foreground mb-1">Sources:</p>
+            <div className="space-y-0.5">
+              {Object.entries(lastRun.sources).map(([name, status]) => (
+                <div key={name} className="flex items-center justify-between gap-2">
+                  <span className="capitalize">{name.replace(/_/g, " ")}</span>
+                  <span
+                    className={cn(
+                      "font-mono truncate",
+                      status.startsWith("ok") ? "text-success" : "text-destructive"
+                    )}
+                  >
+                    {status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Error Message */}
         {lastRun.error && (
           <div className="bg-destructive/10 text-destructive text-xs rounded p-2 border border-destructive/20">
