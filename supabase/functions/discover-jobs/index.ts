@@ -26,6 +26,46 @@ interface DiscoveredJob {
   job_type: string;
 }
 
+// Aggregator/search-result pages list many jobs but can't be applied to, so
+// they must never enter the pipeline as if they were individual postings.
+// URL shapes of individual postings are allowed through first; everything
+// matching a known listing-page shape (by URL or title) is dropped.
+const SINGLE_JOB_URL_PATTERNS = [
+  /linkedin\.com\/jobs\/view\//,
+  /indeed\.com\/(viewjob|rc\/clk|pagead\/clk)/,
+  /greenhouse\.io\/[^/]+\/jobs\/\d+/,
+  /jobs\.lever\.co\/[^/]+\/[0-9a-f][0-9a-f-]{7,}/,
+  /myworkdayjobs\.com\/.+\/job\//,
+  /jobs\.smartrecruiters\.com\/[^/]+\/\d+/,
+];
+
+const AGGREGATOR_URL_PATTERNS = [
+  /linkedin\.com\/jobs\/?(\?|$)/,                                  // jobs home
+  /linkedin\.com\/jobs\/search/,                                   // search results
+  /linkedin\.com\/jobs\/[a-z0-9%+-]*-jobs[a-z0-9%+-]*\/?(\?|$)/,   // "…-jobs" hub pages
+  /indeed\.com\/(m\/)?jobs(\.html)?(\?|$)/,                        // search results
+  /indeed\.com\/q-[^/]*-jobs/,                                     // "/q-…-jobs.html" hub pages
+  /indeed\.com\/(browsejobs|career(\/|\?|$)|cmp\/[^/]+\/jobs)/,    // browse/company hubs
+  /greenhouse\.io\/[^/]+\/?(\?|$)/,                                // company board root
+  /jobs\.lever\.co\/[^/]+\/?(\?|$)/,                               // company board root
+  /\/jobs\/search(\/|\?|$)/,
+  /\/(search|browse|find)-?jobs?(\/|\?|$)/,
+];
+
+const AGGREGATOR_TITLE_PATTERNS = [
+  /\d[\d,.]*\+?\s*(open\s+)?(jobs|positions|openings|vacancies)\b/i, // "1,024 Data Jobs"
+  /\bjobs\s+(in|near)\s+/i,                                          // "Analyst Jobs in Berlin"
+  /\bjobs?,\s*(employment|vacancies|careers)\b/i,                    // "… Jobs, Employment | Indeed"
+  /^\s*(top|best|latest|newest|browse|search|find)\b.*\b(jobs|openings|vacancies)\b/i,
+];
+
+function isAggregatorPage(url: string, title: string): boolean {
+  const u = url.toLowerCase();
+  if (SINGLE_JOB_URL_PATTERNS.some((re) => re.test(u))) return false;
+  if (AGGREGATOR_URL_PATTERNS.some((re) => re.test(u))) return true;
+  return AGGREGATOR_TITLE_PATTERNS.some((re) => re.test(title));
+}
+
 // Input validation
 function validateDiscoveryParams(params: unknown): { valid: boolean; error?: string; data?: DiscoveryParams } {
   if (!params || typeof params !== "object") {
@@ -164,6 +204,7 @@ serve(async (req) => {
     const seenUrls = new Set<string>();
     const searchErrors: { keyword: string; status?: number; message: string }[] = [];
     let searchAttempts = 0;
+    let aggregatorsFiltered = 0;
 
     // Build search queries for each platform
     const platformSites: Record<string, string> = {
@@ -248,6 +289,12 @@ serve(async (req) => {
         for (const result of results) {
           if (seenUrls.has(result.url)) continue;
           seenUrls.add(result.url);
+
+          if (isAggregatorPage(result.url, result.title || "")) {
+            aggregatorsFiltered++;
+            console.info(`Skipping aggregator/listing page: ${result.url}`);
+            continue;
+          }
 
           // Detect platform from URL
           let detectedPlatform = "linkedin"; // Default fallback
@@ -383,7 +430,7 @@ serve(async (req) => {
     }
 
 
-    console.info(`Discovered ${allJobs.length} real jobs total`);
+    console.info(`Discovered ${allJobs.length} real jobs total (${aggregatorsFiltered} aggregator pages filtered)`);
 
     // If we found jobs, optionally enhance with AI for better requirement extraction
     if (allJobs.length > 0) {
@@ -419,6 +466,7 @@ ${JSON.stringify(topJobs.map((j) => ({ title: j.title, company: j.company, descr
         success: true,
         jobs: allJobs,
         userId,
+        aggregatorsFiltered,
         ...(searchErrors.length > 0 && { searchErrors }),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

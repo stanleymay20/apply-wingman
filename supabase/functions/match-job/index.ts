@@ -87,6 +87,7 @@ Return a JSON object with this exact structure:
 {
   "score": number (0-100),
   "confidence": "high" | "medium" | "low",
+  "location_eligible": boolean,
   "breakdown": {
     "skills_match": number (0-100),
     "experience_match": number (0-100),
@@ -101,6 +102,18 @@ Return a JSON object with this exact structure:
   "recommendation": "strong_apply" | "apply" | "consider" | "skip",
   "summary": "2-3 sentence summary of the match"
 }
+
+Location eligibility rules — evaluate these BEFORE scoring anything else:
+- Set location_eligible to true when ANY of the following holds:
+  * the job's country (or region such as "EU") is among the countries the candidate is authorized to work in
+  * the job is remote AND open to workers in the candidate's country
+  * the job explicitly offers visa sponsorship
+- Otherwise set location_eligible to false. A job tied to a country where the
+  candidate has no work authorization and no sponsorship on offer is a HARD
+  DISQUALIFIER: set location_eligible false, breakdown.location_match to 0,
+  score to 15 or below, and recommendation to "skip" regardless of skills fit.
+- If the candidate's eligibility information is not provided, assume
+  location_eligible is true and score normally.
 
 Scoring guidelines:
 - 90-100: Exceptional match, candidate exceeds requirements
@@ -127,7 +140,12 @@ Experience: ${cvProfile.experience_years || 0} years
 Seniority: ${cvProfile.seniority_level || "Not specified"}
 Languages: ${cvProfile.languages?.join(", ") || "Not specified"}
 Summary: ${cvProfile.summary || "Not provided"}
-Keywords: ${cvProfile.keywords?.join(", ") || "Not specified"}`;
+Keywords: ${cvProfile.keywords?.join(", ") || "Not specified"}
+
+CANDIDATE ELIGIBILITY:
+Based in: ${cvProfile.candidate_country || "Not specified"}
+Authorized to work in: ${cvProfile.work_authorized_countries?.length ? cvProfile.work_authorized_countries.join(", ") : "Not specified"}
+Needs visa sponsorship elsewhere: ${cvProfile.needs_sponsorship === true ? "Yes" : cvProfile.needs_sponsorship === false ? "No" : "Unknown"}`;
 
     // Retry logic with exponential backoff for rate limits
     const maxRetries = 3;
@@ -157,6 +175,18 @@ Keywords: ${cvProfile.keywords?.join(", ") || "Not specified"}`;
         throw e;
       }
       {
+        // Enforce the hard disqualifier server-side: even if the model returns
+        // a generous score, a location-ineligible job must never rank as
+        // applicable.
+        if (matchResult && matchResult.location_eligible === false) {
+          matchResult.score = Math.min(typeof matchResult.score === "number" ? matchResult.score : 0, 15);
+          if (matchResult.breakdown) matchResult.breakdown.location_match = 0;
+          matchResult.recommendation = "skip";
+          matchResult.concerns = [
+            "Hard disqualifier: candidate is not authorized to work in the job location and no visa sponsorship is offered",
+            ...(Array.isArray(matchResult.concerns) ? matchResult.concerns : []),
+          ];
+        }
 
         // Update job with match score if jobId provided
         if (jobId) {
