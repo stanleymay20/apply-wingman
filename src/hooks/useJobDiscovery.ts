@@ -32,6 +32,8 @@ export interface DiscoveryRunStatus {
   duplicatesSkipped: number;
   error: string | null;
   status: "success" | "partial" | "error";
+  /** Per-source outcome from the edge function, e.g. { firecrawl: "quota_exceeded", arbeitnow: "ok: 12 jobs" } */
+  sources?: Record<string, string> | null;
 }
 
 // Discovery run status must be shared across every useJobDiscovery() instance:
@@ -195,7 +197,9 @@ export function useJobDiscovery() {
   }, [cvProfile?.id, user, queryClient]);
 
   const discoverJobsMutation = useMutation({
-    mutationFn: async (params: DiscoveryParams): Promise<DiscoveredJob[]> => {
+    mutationFn: async (
+      params: DiscoveryParams
+    ): Promise<{ jobs: DiscoveredJob[]; sources: Record<string, string> | null }> => {
       if (!user) throw new Error("Not authenticated");
 
       // Validate params - no empty searches allowed
@@ -219,17 +223,25 @@ export function useJobDiscovery() {
           throw new Error(error.message || "Failed to discover jobs");
         }
         if (data?.error) {
-          console.error("Data error:", data.error);
-          throw new Error(data.error);
+          console.error("Data error:", data.error, "sources:", data.sources);
+          const sourceSummary = data.sources
+            ? ` [${Object.entries(data.sources as Record<string, string>)
+                .map(([name, status]) => `${name}: ${status}`)
+                .join(", ")}]`
+            : "";
+          throw new Error(data.error + sourceSummary);
         }
-        return (data?.jobs || []) as DiscoveredJob[];
+        return {
+          jobs: (data?.jobs || []) as DiscoveredJob[],
+          sources: (data?.sources as Record<string, string> | undefined) ?? null,
+        };
       } catch (err) {
         console.error("Discovery fetch error:", err);
         throw err;
       }
     },
-    onSuccess: async (jobs, params) => {
-      console.log("Discovery success, jobs:", jobs?.length);
+    onSuccess: async ({ jobs, sources }, params) => {
+      console.log("Discovery success, jobs:", jobs?.length, "sources:", sources);
 
       if (!user) {
         setLastRun({
@@ -240,6 +252,7 @@ export function useJobDiscovery() {
           duplicatesSkipped: 0,
           error: "Not authenticated",
           status: "error",
+          sources,
         });
         toast.error("Not authenticated");
         return;
@@ -254,6 +267,7 @@ export function useJobDiscovery() {
           duplicatesSkipped: 0,
           error: null,
           status: "success",
+          sources,
         });
         toast.info("No new matching jobs found");
         return;
@@ -312,6 +326,7 @@ export function useJobDiscovery() {
           duplicatesSkipped,
           error: "All jobs already exist in your list",
           status: "partial",
+          sources,
         });
         toast.info(`Found ${jobs.length} jobs, but all ${duplicatesSkipped} were duplicates`);
         return;
@@ -346,6 +361,7 @@ export function useJobDiscovery() {
           duplicatesSkipped,
           error: `Database error: ${error.code} - ${error.message}`,
           status: "error",
+          sources,
         });
         toast.error(`Failed to save jobs: ${error.message}`);
       } else {
@@ -360,6 +376,7 @@ export function useJobDiscovery() {
           duplicatesSkipped,
           error: null,
           status: "success",
+          sources,
         });
 
         queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -415,7 +432,7 @@ export function useJobDiscovery() {
     isDiscovering: discoverJobsMutation.isPending,
     isMatching,
     matchJobsInBackground,
-    discoveredJobs: discoverJobsMutation.data,
+    discoveredJobs: discoverJobsMutation.data?.jobs,
     lastRun,
     clearLastRun: () => setLastRun(null),
   };
