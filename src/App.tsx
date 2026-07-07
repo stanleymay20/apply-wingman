@@ -94,6 +94,7 @@ const App = () => (
               <Route path="/admin/failures" element={<AdminFailures />} />
               <Route path="/admin/delivery" element={<AdminDelivery />} />
               <Route path="/admin/system-health" element={<AdminSystemHealth />} />
+              <Route path="/admin/ai-provider" element={<AdminAIProvider />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GlobalProviders>
