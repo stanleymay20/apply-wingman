@@ -51,8 +51,20 @@ interface ProviderConfig {
   modelMap?: Record<string, string>;
 }
 
-function resolveProvider(): ProviderConfig {
-  const explicit = Deno.env.get("AI_PROVIDER");
+/** Provider/model override resolved from system_settings (admin AI Provider page). */
+export interface AIConfigOverride {
+  provider?: string;
+  model?: string;
+}
+
+function resolveProvider(override?: AIConfigOverride): ProviderConfig {
+  const cfg = resolveProviderRaw(override?.provider);
+  if (override?.model) cfg.defaultModel = override.model;
+  return cfg;
+}
+
+function resolveProviderRaw(explicitOverride?: string): ProviderConfig {
+  const explicit = explicitOverride ?? Deno.env.get("AI_PROVIDER");
 
   const localBaseUrl = Deno.env.get("LOCAL_LLM_BASE_URL");
   const localApiKey = Deno.env.get("LOCAL_LLM_API_KEY");
