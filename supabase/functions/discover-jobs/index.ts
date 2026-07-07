@@ -132,7 +132,20 @@ serve(async (req) => {
       );
     }
 
-    // Parse and validate input
+    // AI health preflight — job parsing/classification needs AI, so don't spend
+    // Firecrawl credits if no AI provider is configured.
+    try {
+      await preflightAI();
+    } catch (e) {
+      if (e instanceof AIError) {
+        return new Response(
+          JSON.stringify({ success: false, error: e.message, code: "AI_NOT_CONFIGURED" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw e;
+    }
+
     const rawParams = await req.json();
     const validation = validateDiscoveryParams(rawParams);
     
