@@ -528,6 +528,7 @@ export type Database = {
       cv_profiles: {
         Row: {
           ats_suggestions: Json | null
+          candidate_country: string | null
           created_at: string | null
           cv_file_name: string | null
           cv_file_url: string | null
@@ -538,6 +539,7 @@ export type Database = {
           keywords: string[] | null
           languages: string[] | null
           last_parsed_at: string | null
+          needs_sponsorship: boolean
           parsed_data: Json | null
           profile_name: string | null
           resume_score: number | null
@@ -546,10 +548,12 @@ export type Database = {
           summary: string | null
           updated_at: string | null
           user_id: string
+          work_authorized_countries: string[]
           work_history: Json | null
         }
         Insert: {
           ats_suggestions?: Json | null
+          candidate_country?: string | null
           created_at?: string | null
           cv_file_name?: string | null
           cv_file_url?: string | null
@@ -560,6 +564,7 @@ export type Database = {
           keywords?: string[] | null
           languages?: string[] | null
           last_parsed_at?: string | null
+          needs_sponsorship?: boolean
           parsed_data?: Json | null
           profile_name?: string | null
           resume_score?: number | null
@@ -568,10 +573,12 @@ export type Database = {
           summary?: string | null
           updated_at?: string | null
           user_id: string
+          work_authorized_countries?: string[]
           work_history?: Json | null
         }
         Update: {
           ats_suggestions?: Json | null
+          candidate_country?: string | null
           created_at?: string | null
           cv_file_name?: string | null
           cv_file_url?: string | null
@@ -582,6 +589,7 @@ export type Database = {
           keywords?: string[] | null
           languages?: string[] | null
           last_parsed_at?: string | null
+          needs_sponsorship?: boolean
           parsed_data?: Json | null
           profile_name?: string | null
           resume_score?: number | null
@@ -590,6 +598,7 @@ export type Database = {
           summary?: string | null
           updated_at?: string | null
           user_id?: string
+          work_authorized_countries?: string[]
           work_history?: Json | null
         }
         Relationships: [
