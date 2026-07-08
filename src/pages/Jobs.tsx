@@ -47,8 +47,13 @@ import { JobDetailsPanel } from "@/components/jobs/JobDetailsPanel";
 import { SavedSearchesPanel } from "@/components/jobs/SavedSearchesPanel";
 import { BulkApplyDialog } from "@/components/jobs/BulkApplyDialog";
 import { DiscoveryStatusPanel } from "@/components/jobs/DiscoveryStatusPanel";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+const isAgencyJob = (job: { source_type?: string | null }) =>
+  job.source_type === "agency_or_aggregator";
 
 type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired";
 
