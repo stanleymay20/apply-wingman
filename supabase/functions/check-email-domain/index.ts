@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_JWKS = Deno.env.get("SUPABASE_JWKS")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 interface DomainRecord {
   record: string;
@@ -42,8 +42,10 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const supabase = createClient(SUPABASE_URL, SUPABASE_JWKS);
     const token = auth.replace("Bearer ", "");
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: auth } },
+    });
     const { data: claims, error: claimsErr } = await supabase.auth.getClaims(token);
     if (claimsErr || !claims) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
