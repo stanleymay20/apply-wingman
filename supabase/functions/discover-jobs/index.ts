@@ -399,7 +399,16 @@ serve(async (req) => {
     console.log(`Authenticated user: ${userId}`);
     // ===== END AUTHENTICATION =====
 
-    const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+    // Firecrawl keys: primary + connector-managed fallback. An exhausted key
+    // (HTTP 402) rolls over to the next so one depleted key doesn't kill search.
+    const firecrawlKeys = [
+      Deno.env.get("FIRECRAWL_API_KEY"),
+      Deno.env.get("FIRECRAWL_API_KEY_1"),
+    ]
+      .filter((k): k is string => !!k && k.trim().length > 0)
+      .filter((k, i, arr) => arr.indexOf(k) === i);
+    let firecrawlKeyIdx = 0;
+    const firecrawlKey = firecrawlKeys[0]; // truthy when at least one key is configured
     const sourceReport: Record<string, string> = {};
 
     if (!firecrawlKey) {
