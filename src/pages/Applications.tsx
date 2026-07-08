@@ -557,24 +557,24 @@ export default function Applications() {
                           {/* Finish manual application step */}
                           {app.status === "manual_action_required" && app.job?.source_url && (
                             <>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-yellow-600 dark:text-yellow-400 border-yellow-500/40"
-                                    onClick={() =>
-                                      window.open(app.job!.source_url, "_blank", "noopener,noreferrer")
-                                    }
-                                  >
-                                    <ExternalLink className="w-4 h-4 mr-1" />
-                                    Finish
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  Open the application form to complete it manually
-                                </TooltipContent>
-                              </Tooltip>
+                              {/* Real anchor (same reliable pattern as the
+                                  External Link action) — window.open was a
+                                  silent no-op behind the tooltip trigger. */}
+                              <a
+                                href={app.job.source_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open the application form to complete it manually"
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-yellow-600 dark:text-yellow-400 border-yellow-500/40"
+                                >
+                                  <ExternalLink className="w-4 h-4 mr-1" />
+                                  Finish
+                                </Button>
+                              </a>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button

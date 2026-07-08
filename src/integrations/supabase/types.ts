@@ -721,6 +721,7 @@ export type Database = {
           id: string
           is_remote: boolean | null
           job_type: string | null
+          liveness_checked_at: string | null
           location: string | null
           match_details: Json | null
           match_score: number | null
@@ -753,6 +754,7 @@ export type Database = {
           id?: string
           is_remote?: boolean | null
           job_type?: string | null
+          liveness_checked_at?: string | null
           location?: string | null
           match_details?: Json | null
           match_score?: number | null
@@ -785,6 +787,7 @@ export type Database = {
           id?: string
           is_remote?: boolean | null
           job_type?: string | null
+          liveness_checked_at?: string | null
           location?: string | null
           match_details?: Json | null
           match_score?: number | null
