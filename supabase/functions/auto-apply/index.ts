@@ -16,8 +16,10 @@ const corsHeaders = {
 // scrolllibrary.app is a VERIFIED sending domain in Resend, so emails to real
 // recruiter inboxes will deliver. Override with the SENDER_EMAIL secret if you
 // want to send from a different verified domain/address.
-const SENDER_EMAIL = Deno.env.get("SENDER_EMAIL") ?? "jobs@scrolllibrary.app";
+const SENDER_EMAIL = Deno.env.get("SENDER_EMAIL") ?? "stanley@scrolllibrary.app";
 const SENDER_NAME = "ApplyPilot";
+const REPLY_TO_EMAIL = Deno.env.get("REPLY_TO_EMAIL");
+
 
 // Application cap - raised for real usage
 const MAX_DAILY_APPLICATIONS = 200;
