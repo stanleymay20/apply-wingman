@@ -341,6 +341,7 @@ export function useJobDiscovery() {
         requirements: job.requirements || [],
         is_remote: job.is_remote ?? false,
         job_type: job.job_type || null,
+        source_type: job.source_type || "direct_employer",
         user_id: user.id,
         status: "discovered",
       }));
