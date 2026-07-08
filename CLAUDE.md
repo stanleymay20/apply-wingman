@@ -17,8 +17,19 @@ production when one of these happens:
 2. **Via the `Deploy Supabase backend` GitHub Action** — a `SUPABASE_DB_URL`
    repo secret (Postgres connection string, port 5432) is enough to
    auto-apply migrations on merge; `SUPABASE_ACCESS_TOKEN` additionally
-   enables edge-function deploys. Without secrets it skips with a notice
-   (Lovable Cloud may not expose these credentials).
+   enables edge-function deploys. Without secrets it skips with a notice.
+
+   **Confirmed 2026-07-08 (by the Lovable agent itself): these credentials
+   cannot be obtained while the project is Lovable Cloud–managed.** The DB
+   password and access tokens are not exposed at all, so the Action stays
+   dormant and option 1 (prompting Lovable) is the only deploy path. The
+   Action becomes functional only if the project moves to a self-owned
+   Supabase account — a manual export/import (Cloud → Advanced settings →
+   Export data; storage exported separately; auth/secrets reconfigured by
+   hand). Note when weighing that move: the app's AI calls default to the
+   Lovable AI gateway (`LOVABLE_API_KEY` in `_shared/aiClient.ts`), which
+   presumably goes away off-Cloud, so a replacement provider key (e.g.
+   `GROQ_API_KEY` or `OPENAI_API_KEY`) would also be needed.
 
 Skipping this step causes silent staleness. On 2026-07-08 the deployed
 `discover-jobs` turned out to be running code from before three merged PRs,
