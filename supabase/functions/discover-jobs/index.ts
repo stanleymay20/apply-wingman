@@ -819,12 +819,19 @@ serve(async (req) => {
             jobType = "contract";
           }
 
+          // For known ATS platforms the board slug in the URL is the
+          // authoritative employer identity, so prefer it over the noisy
+          // title/markdown parsing. Otherwise sanitize the parsed name.
+          const atsSlug = ["lever", "greenhouse", "workday", "smartrecruiters"].includes(detectedPlatform)
+            ? slugFromUrl(result.url)
+            : null;
+          const resolvedCompany = atsSlug
+            ? prettifySlug(atsSlug)
+            : sanitizeCompany(company, result.url, keywords);
+
           allJobs.push({
             title: jobTitle,
-            // Never persist a search keyword as the company; derive from the
-            // board slug in the URL when the parsed name is unusable.
-            company: sanitizeCompany(company, result.url, keywords),
-
+            company: resolvedCompany,
             location: jobLocation,
             source_platform: detectedPlatform,
             source_url: result.url,
@@ -835,6 +842,7 @@ serve(async (req) => {
           });
           firecrawlJobCount++;
         }
+
       } catch (searchError) {
         const errMsg = searchError instanceof DOMException && searchError.name === "AbortError"
           ? `Firecrawl search timed out after ${Math.round(FIRECRAWL_SEARCH_TIMEOUT_MS / 1000)}s`
