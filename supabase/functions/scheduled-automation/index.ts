@@ -180,6 +180,9 @@ serve(async (req) => {
                   runStatus = "partial";
                 } else if (cvProfile && insertedJobs) {
                   for (const job of insertedJobs.slice(0, 10)) {
+                    // Never auto-match/apply to agency/aggregator listings —
+                    // they route into a third-party funnel, not the real employer.
+                    if ((job as any).source_type === "agency_or_aggregator") continue;
                     const matchStarted = Date.now();
                     await emitStep(supabase, {
                       runId: run.id, userId: user.id, stepName: "match_started", status: "running",
