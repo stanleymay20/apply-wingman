@@ -1,9 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { JobDetailsPanel } from "@/components/jobs/JobDetailsPanel";
+import { AutoApplyButton } from "@/components/jobs/AutoApplyButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { useJobs } from "@/hooks/useJobs";
 import { useCVProfile } from "@/hooks/useCVProfile";
+import { useApplications } from "@/hooks/useApplications";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Briefcase, ExternalLink } from "lucide-react";
 
@@ -12,8 +14,10 @@ export default function JobDetails() {
   const navigate = useNavigate();
   const { jobs, isLoading, matchJob, isMatching } = useJobs();
   const { cvProfile } = useCVProfile();
+  const { applications } = useApplications();
 
   const job = jobs.find((j) => j.id === jobId);
+  const application = applications.find((app) => app.job_id === jobId);
 
   if (isLoading) return <LoadingSpinner />;
 
