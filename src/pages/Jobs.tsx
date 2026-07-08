@@ -345,8 +345,25 @@ export default function Jobs() {
                   Bulk Apply
                 </Button>
               </div>
+              <div className="flex items-center gap-3 mt-4 pt-4 border-t">
+                <Switch
+                  id="include-agency"
+                  checked={includeAgency}
+                  onCheckedChange={setIncludeAgency}
+                />
+                <Label htmlFor="include-agency" className="cursor-pointer text-sm">
+                  Include agency/aggregator listings
+                  {agencyCount > 0 && (
+                    <span className="text-muted-foreground font-normal">
+                      {" "}({agencyCount} hidden)
+                    </span>
+                  )}
+                </Label>
+                <HelpTooltip content="Third-party boards like Jobgether post roles on behalf of unnamed employers and route you into their own screening funnel. They're excluded from Match All, Good Fit counts and Bulk Apply by default." />
+              </div>
             </CardContent>
           </Card>
+
 
           {/* Jobs Table */}
           {filteredJobs.length === 0 ? (
