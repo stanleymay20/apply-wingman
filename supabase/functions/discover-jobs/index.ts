@@ -614,6 +614,7 @@ serve(async (req) => {
       if (!matchesAnyKeyword(job.title, job.description, keywords)) return false;
       // Final guard: never persist a search keyword (or a blank) as the company.
       job.company = sanitizeCompany(job.company, job.source_url, keywords);
+      job.source_type = classifySourceType(job.source_url, job.company);
       allJobs.push(job);
       return true;
     };
