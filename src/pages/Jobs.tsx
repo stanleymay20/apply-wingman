@@ -401,10 +401,16 @@ export default function Jobs() {
                 <Button
                   variant="outline"
                   onClick={handleMatchAll}
-                  disabled={isMatching || !cvProfile}
+                  disabled={batchMatching || isMatching || !cvProfile}
                 >
-                  <Target className="w-4 h-4 mr-2" />
-                  Match All
+                  {batchMatching ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Target className="w-4 h-4 mr-2" />
+                  )}
+                  {batchMatching && matchProgress
+                    ? `Matching ${matchProgress.done}/${matchProgress.total}`
+                    : "Match All"}
                 </Button>
                 <Button onClick={() => setBulkApplyOpen(true)} disabled={matchedJobs.length === 0}>
                   <Rocket className="w-4 h-4 mr-2" />
