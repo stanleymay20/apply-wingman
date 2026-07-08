@@ -34,6 +34,7 @@ import {
 import { useAutoApply } from "@/hooks/useAutoApply";
 import { useAuth } from "@/hooks/useAuth";
 import { useCVProfile } from "@/hooks/useCVProfile";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { detectApplicationMethod, getAvailableMethods } from "@/lib/applicationMethods";
 import { cn } from "@/lib/utils";
@@ -59,12 +60,63 @@ interface AutoApplyButtonProps {
 
 export function AutoApplyButton({ job, variant = "default", size = "default" }: AutoApplyButtonProps) {
   const { autoApply, isApplying, checkEmailUsage } = useAutoApply();
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const { cvProfile } = useCVProfile();
-  
+
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [coverLetter, setCoverLetter] = useState(job.application?.cover_letter || "");
+  const [applicationId, setApplicationId] = useState<string | null>(job.application?.id ?? null);
+  const [ensuring, setEnsuring] = useState(false);
+
+  // Ensure an application record exists for this job, creating one on demand.
+  const ensureApplicationId = async (): Promise<string | null> => {
+    if (applicationId) return applicationId;
+    if (!user) {
+      toast.error("You must be signed in to apply");
+      return null;
+    }
+    setEnsuring(true);
+    try {
+      // Reuse an existing application if one already exists for this job.
+      const { data: existing } = await supabase
+        .from("applications")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("job_id", job.id)
+        .maybeSingle();
+
+      if (existing?.id) {
+        setApplicationId(existing.id);
+        return existing.id;
+      }
+
+      const { data: created, error } = await supabase
+        .from("applications")
+        .insert({
+          user_id: user.id,
+          job_id: job.id,
+          match_score: 0,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+
+      if (error || !created?.id) {
+        throw new Error(error?.message || "Failed to create application");
+      }
+      setApplicationId(created.id);
+      return created.id;
+    } catch (err) {
+      toast.error(
+        `Could not start application: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+      return null;
+    } finally {
+      setEnsuring(false);
+    }
+  };
+
 
   // Get detected method and all available methods
   const detectedMethod = detectApplicationMethod(
@@ -79,11 +131,6 @@ export function AutoApplyButton({ job, variant = "default", size = "default" }: 
   );
 
   const handleApply = async (method: "email" | "ats_api" | "assisted") => {
-    if (!job.application?.id) {
-      toast.error("Please create an application first");
-      return;
-    }
-
     // Warn if using email when ATS is available
     if (method === "email" && !detectedMethod.requiresEmail) {
       const emailCheck = checkEmailUsage(job.source_url, job.source_platform, job.description);
@@ -98,6 +145,10 @@ export function AutoApplyButton({ job, variant = "default", size = "default" }: 
       setEmailDialogOpen(true);
       return;
     }
+
+    // Create the application record on demand if it doesn't exist yet.
+    const appId = await ensureApplicationId();
+    if (!appId) return;
 
     if (method === "assisted") {
       // Copy application data to clipboard
@@ -115,7 +166,7 @@ ${coverLetter || ""}
     }
 
     autoApply({
-      applicationId: job.application.id,
+      applicationId: appId,
       jobId: job.id,
       method,
       jobTitle: job.title,
@@ -126,19 +177,17 @@ ${coverLetter || ""}
     });
   };
 
-  const handleEmailSubmit = () => {
+  const handleEmailSubmit = async () => {
     if (!recipientEmail) {
       toast.error("Please enter the recipient email");
       return;
     }
 
-    if (!job.application?.id) {
-      toast.error("Please create an application first");
-      return;
-    }
+    const appId = await ensureApplicationId();
+    if (!appId) return;
 
     autoApply({
-      applicationId: job.application.id,
+      applicationId: appId,
       jobId: job.id,
       method: "email",
       recipientEmail,
@@ -170,8 +219,8 @@ ${coverLetter || ""}
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant={variant} size={size} disabled={isApplying}>
-            {isApplying ? (
+          <Button variant={variant} size={size} disabled={isApplying || ensuring}>
+            {isApplying || ensuring ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Rocket className="w-4 h-4 mr-2" />
