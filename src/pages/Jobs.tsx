@@ -49,6 +49,7 @@ import { BulkApplyDialog } from "@/components/jobs/BulkApplyDialog";
 import { DiscoveryStatusPanel } from "@/components/jobs/DiscoveryStatusPanel";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { HelpTooltip } from "@/components/common/HelpTooltip";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
