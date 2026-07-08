@@ -290,26 +290,9 @@ export function useJobDiscovery() {
         return;
       }
 
-      // Fetch ALL existing jobs for deduplication (source_url AND external_id)
-      const { data: existingJobs } = await supabase
-        .from("jobs")
-        .select("source_url, external_id")
-        .eq("user_id", user.id);
-
-      // Build sets for fast lookup with normalized URLs
-      const existingUrlSet = new Set<string>();
-      const existingIdSet = new Set<string>();
-      
-      (existingJobs || []).forEach(job => {
-        if (job.source_url) {
-          existingUrlSet.add(normalizeJobUrl(job.source_url));
-        }
-        if (job.external_id) {
-          existingIdSet.add(job.external_id);
-        }
-      });
-
-      // Process jobs with deduplication
+      // Process jobs with batch-level deduplication. Existing-row deduplication
+      // is enforced by the database via jobs.source_key, so we avoid the old
+      // "fetch all jobs" approach that silently capped at 1,000 rows.
       const newJobs: DiscoveredJob[] = [];
       const seenInBatch = new Set<string>();
       let duplicatesSkipped = 0;
@@ -318,13 +301,9 @@ export function useJobDiscovery() {
         const normalizedUrl = normalizeJobUrl(job.source_url);
         const externalId = generateExternalId(job.source_url, job.source_platform);
 
-        // Check for duplicates: normalized URL, external_id, or within this batch
-        if (
-          existingUrlSet.has(normalizedUrl) ||
-          existingIdSet.has(externalId) ||
-          seenInBatch.has(normalizedUrl) ||
-          seenInBatch.has(externalId)
-        ) {
+        // Check duplicates within this function response; existing duplicates
+        // are ignored by the upsert below using the database's unique source key.
+        if (seenInBatch.has(normalizedUrl) || seenInBatch.has(externalId)) {
           duplicatesSkipped++;
           continue;
         }
@@ -365,8 +344,11 @@ export function useJobDiscovery() {
         status: "discovered",
       }));
 
-      console.log("Inserting jobs:", jobsToInsert.length, "Duplicates skipped:", duplicatesSkipped);
-      const { data: insertedData, error } = await supabase.from("jobs").insert(jobsToInsert).select();
+      console.log("Saving jobs:", jobsToInsert.length, "Batch duplicates skipped:", duplicatesSkipped);
+      const { data: insertedData, error } = await supabase
+        .from("jobs")
+        .upsert(jobsToInsert, { onConflict: "user_id,source_key", ignoreDuplicates: true })
+        .select();
 
       if (error) {
         console.error("Failed to save discovered jobs:", error);
@@ -382,8 +364,24 @@ export function useJobDiscovery() {
         });
         toast.error(`Failed to save jobs: ${error.message}`);
       } else {
-        const savedCount = insertedData?.length || newJobs.length;
+        const savedCount = insertedData?.length ?? newJobs.length;
+        duplicatesSkipped += Math.max(0, newJobs.length - savedCount);
         const insertedJobIds = insertedData?.map(j => j.id) || [];
+
+        if (savedCount === 0) {
+          setLastRun({
+            timestamp: new Date().toISOString(),
+            params,
+            jobsReturned: jobs.length,
+            jobsSaved: 0,
+            duplicatesSkipped,
+            error: "All jobs already exist in your list",
+            status: "partial",
+            sources,
+          });
+          toast.info(`Found ${jobs.length} jobs, but all ${duplicatesSkipped} were duplicates`);
+          return;
+        }
         
         setLastRun({
           timestamp: new Date().toISOString(),
