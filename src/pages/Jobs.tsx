@@ -90,6 +90,7 @@ export default function Jobs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [includeAgency, setIncludeAgency] = useState(false);
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [companyTrackerOpen, setCompanyTrackerOpen] = useState(false);
   const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
@@ -97,8 +98,18 @@ export default function Jobs() {
   const [selectedJob, setSelectedJob] = useState<(typeof jobs)[0] | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
+  // Agency/aggregator listings (e.g. Jobgether) route candidates into a
+  // third-party funnel rather than the real employer, so they're excluded from
+  // the primary matching/apply pipeline unless the user opts in.
+  const agencyCount = useMemo(() => jobs.filter(isAgencyJob).length, [jobs]);
+
+  const pipelineJobs = useMemo(
+    () => (includeAgency ? jobs : jobs.filter((j) => !isAgencyJob(j))),
+    [jobs, includeAgency]
+  );
+
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
+    return pipelineJobs.filter((job) => {
       const matchesSearch =
         searchQuery === "" ||
         job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -111,11 +122,11 @@ export default function Jobs() {
 
       return matchesSearch && matchesStatus && matchesPlatform;
     });
-  }, [jobs, searchQuery, statusFilter, platformFilter]);
+  }, [pipelineJobs, searchQuery, statusFilter, platformFilter]);
 
   const matchedJobs = useMemo(() => {
-    return jobs.filter((j) => j.match_score);
-  }, [jobs]);
+    return pipelineJobs.filter((j) => j.match_score);
+  }, [pipelineJobs]);
 
   const handleMatchJob = (jobId: string) => {
     if (!cvProfile) {
