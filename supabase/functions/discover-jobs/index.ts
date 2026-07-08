@@ -467,6 +467,7 @@ serve(async (req) => {
     const searchErrors: { keyword: string; status?: number; message: string }[] = [];
     let searchAttempts = 0;
     let aggregatorsFiltered = 0;
+    let firecrawlJobCount = 0;
 
     // Shared filtering pipeline for non-Firecrawl sources: dedupe, aggregator
     // filter, and keyword relevance — same gates the Firecrawl results face.
@@ -518,6 +519,7 @@ serve(async (req) => {
       lever: "site:jobs.lever.co",
       workday: "site:myworkdayjobs.com",
       smartrecruiters: "site:jobs.smartrecruiters.com",
+      company_website: "(site:careers.* OR site:jobs.* OR inurl:careers OR inurl:jobs)",
     };
 
     // Build location string - only if provided, otherwise don't constrain
@@ -721,6 +723,7 @@ serve(async (req) => {
             is_remote: isRemote,
             job_type: jobType,
           });
+          firecrawlJobCount++;
         }
       } catch (searchError) {
         const errMsg = searchError instanceof Error ? searchError.message : String(searchError);
@@ -737,7 +740,7 @@ serve(async (req) => {
           ? "quota_exceeded"
           : `failed: ${searchErrors[0]?.message ?? "all searches failed"}`;
       } else {
-        sourceReport.firecrawl = `ok: ${allJobs.length} jobs`;
+        sourceReport.firecrawl = `ok: ${firecrawlJobCount} jobs`;
       }
     }
 
