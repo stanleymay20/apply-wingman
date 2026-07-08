@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 
+const JOBS_PAGE_SIZE = 1000;
+
 export function useJobs() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -11,13 +13,27 @@ export function useJobs() {
     queryKey: ["jobs", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
-        .from("jobs")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data || [];
+
+      const allJobs: any[] = [];
+      let page = 0;
+
+      while (true) {
+        const from = page * JOBS_PAGE_SIZE;
+        const to = from + JOBS_PAGE_SIZE - 1;
+        const { data, error } = await supabase
+          .from("jobs")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .range(from, to);
+
+        if (error) throw error;
+        allJobs.push(...(data || []));
+        if (!data || data.length < JOBS_PAGE_SIZE) break;
+        page += 1;
+      }
+
+      return allJobs;
     },
     enabled: !!user,
   });
