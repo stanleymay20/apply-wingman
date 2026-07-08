@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { MouseEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -215,21 +215,55 @@ ${coverLetter || ""}
 
   const recommendedConfig = methodConfig[detectedMethod.type] || methodConfig.assisted;
 
+  const getRecommendedMethod = (): "email" | "ats_api" | "assisted" => {
+    if (detectedMethod.type === "email") return "email";
+    if (detectedMethod.type.startsWith("ats_") || detectedMethod.type === "company_form") {
+      return "ats_api";
+    }
+    return "assisted";
+  };
+
+  const handlePrimaryApply = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    await handleApply(getRecommendedMethod());
+  };
+
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant={variant} size={size} disabled={isApplying || ensuring}>
+      <div className="inline-flex items-center" onClick={(event) => event.stopPropagation()}>
+        <Button
+          variant={variant}
+          size={size}
+          disabled={isApplying || ensuring}
+          onClick={handlePrimaryApply}
+          className="rounded-r-none"
+        >
+          {isApplying || ensuring ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Rocket className="w-4 h-4 mr-2" />
+          )}
+          Auto Apply
+        </Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant={variant}
+              size={size === "sm" ? "sm" : "default"}
+              disabled={isApplying || ensuring}
+              aria-label="Choose apply method"
+              className="rounded-l-none border-l border-primary-foreground/20 px-2"
+              onClick={(event) => event.stopPropagation()}
+            >
             {isApplying || ensuring ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Rocket className="w-4 h-4 mr-2" />
+              <ChevronDown className="w-4 h-4" />
             )}
-            Auto Apply
-            <ChevronDown className="w-4 h-4 ml-2" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72">
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuLabel className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
               Recommended: {recommendedConfig.label}
@@ -314,8 +348,9 @@ ${coverLetter || ""}
               </div>
             </div>
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {/* Email Application Dialog */}
       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
