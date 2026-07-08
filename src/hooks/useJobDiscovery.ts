@@ -22,6 +22,7 @@ interface DiscoveredJob {
   is_remote: boolean;
   job_type: string;
   external_id?: string;
+  source_type?: "direct_employer" | "agency_or_aggregator";
 }
 
 export interface DiscoveryRunStatus {
