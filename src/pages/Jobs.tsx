@@ -260,10 +260,12 @@ export default function Jobs() {
       applied: "bg-success/10 text-success border-success/20",
       rejected: "bg-destructive/10 text-destructive border-destructive/20",
       expired: "bg-muted text-muted-foreground border-border",
+      posting_expired: "bg-destructive/10 text-destructive border-destructive/20",
     };
+    const label = status === "posting_expired" ? "Expired" : status;
     return (
       <Badge variant="outline" className={cn("capitalize", styles[status])}>
-        {status}
+        {label}
       </Badge>
     );
   };
