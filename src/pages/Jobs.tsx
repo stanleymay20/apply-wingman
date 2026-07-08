@@ -84,6 +84,7 @@ const PLATFORM_OPTIONS = [
 
 export default function Jobs() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { profile } = useAuth();
   const jobDetailsView = profile?.job_details_view || "drawer";
 
