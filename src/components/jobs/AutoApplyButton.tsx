@@ -131,11 +131,6 @@ export function AutoApplyButton({ job, variant = "default", size = "default" }: 
   );
 
   const handleApply = async (method: "email" | "ats_api" | "assisted") => {
-    if (!job.application?.id) {
-      toast.error("Please create an application first");
-      return;
-    }
-
     // Warn if using email when ATS is available
     if (method === "email" && !detectedMethod.requiresEmail) {
       const emailCheck = checkEmailUsage(job.source_url, job.source_platform, job.description);
@@ -150,6 +145,10 @@ export function AutoApplyButton({ job, variant = "default", size = "default" }: 
       setEmailDialogOpen(true);
       return;
     }
+
+    // Create the application record on demand if it doesn't exist yet.
+    const appId = await ensureApplicationId();
+    if (!appId) return;
 
     if (method === "assisted") {
       // Copy application data to clipboard
@@ -167,7 +166,7 @@ ${coverLetter || ""}
     }
 
     autoApply({
-      applicationId: job.application.id,
+      applicationId: appId,
       jobId: job.id,
       method,
       jobTitle: job.title,
@@ -178,19 +177,17 @@ ${coverLetter || ""}
     });
   };
 
-  const handleEmailSubmit = () => {
+  const handleEmailSubmit = async () => {
     if (!recipientEmail) {
       toast.error("Please enter the recipient email");
       return;
     }
 
-    if (!job.application?.id) {
-      toast.error("Please create an application first");
-      return;
-    }
+    const appId = await ensureApplicationId();
+    if (!appId) return;
 
     autoApply({
-      applicationId: job.application.id,
+      applicationId: appId,
       jobId: job.id,
       method: "email",
       recipientEmail,
