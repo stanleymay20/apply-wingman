@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 const isAgencyJob = (job: { source_type?: string | null }) =>
   job.source_type === "agency_or_aggregator";
 
-type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired";
+type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired" | "posting_expired";
 
 const STATUS_OPTIONS: { value: JobStatus | "all"; label: string }[] = [
   { value: "all", label: "All Statuses" },
@@ -66,7 +66,7 @@ const STATUS_OPTIONS: { value: JobStatus | "all"; label: string }[] = [
   { value: "matched", label: "Matched" },
   { value: "applied", label: "Applied" },
   { value: "rejected", label: "Rejected" },
-  { value: "expired", label: "Expired" },
+  { value: "posting_expired", label: "Expired / Dead" },
 ];
 
 const PLATFORM_OPTIONS = [
