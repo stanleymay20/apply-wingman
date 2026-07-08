@@ -99,6 +99,8 @@ export default function Jobs() {
   const [companyTrackerOpen, setCompanyTrackerOpen] = useState(false);
   const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
   const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
+  const [batchMatching, setBatchMatching] = useState(false);
+  const [matchProgress, setMatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [selectedJob, setSelectedJob] = useState<(typeof jobs)[0] | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
