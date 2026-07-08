@@ -139,7 +139,6 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
         },
         onError: (error) => {
           console.error("Discovery failed:", error);
-          toast.error(`Discovery failed: ${error.message}`);
         },
       }
     );
