@@ -543,22 +543,34 @@ serve(async (req) => {
 
       searchAttempts++;
       try {
-        const searchResponse = await fetch("https://api.firecrawl.dev/v1/search", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${firecrawlKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            query: searchQuery,
-            limit: 15, // Get more results per keyword
-            lang: "en",
-            tbs: "qdr:m", // Last month for more results
-            scrapeOptions: {
-              formats: ["markdown"],
+        const doFirecrawlFetch = () =>
+          fetch("https://api.firecrawl.dev/v1/search", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${firecrawlKeys[firecrawlKeyIdx]}`,
+              "Content-Type": "application/json",
             },
-          }),
-        });
+            body: JSON.stringify({
+              query: searchQuery,
+              limit: 15, // Get more results per keyword
+              lang: "en",
+              tbs: "qdr:m", // Last month for more results
+              scrapeOptions: {
+                formats: ["markdown"],
+              },
+            }),
+          });
+
+        let searchResponse = await doFirecrawlFetch();
+
+        // Credit exhaustion (402) on the current key: roll over to the next
+        // configured key (e.g. the connector-managed one) and retry.
+        while (searchResponse.status === 402 && firecrawlKeyIdx < firecrawlKeys.length - 1) {
+          await searchResponse.body?.cancel();
+          firecrawlKeyIdx++;
+          console.warn(`Firecrawl key #${firecrawlKeyIdx + 1} in use after 402 rollover`);
+          searchResponse = await doFirecrawlFetch();
+        }
 
         if (!searchResponse.ok) {
           const errorData = await searchResponse.json().catch(() => ({}));
