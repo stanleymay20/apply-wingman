@@ -114,6 +114,20 @@ export default function Jobs() {
     [jobs, includeAgency]
   );
 
+  // Dead/removed postings (marked posting_expired by the liveness check) must
+  // never surface as matchable or applyable. They stay visible in the table via
+  // the "Expired / Dead" status filter, but are excluded from Match All, Good
+  // Fit counts and Bulk Apply.
+  const livePipelineJobs = useMemo(
+    () => pipelineJobs.filter((j) => j.status !== "posting_expired"),
+    [pipelineJobs]
+  );
+
+  const expiredCount = useMemo(
+    () => pipelineJobs.filter((j) => j.status === "posting_expired").length,
+    [pipelineJobs]
+  );
+
   const filteredJobs = useMemo(() => {
     return pipelineJobs.filter((job) => {
       const matchesSearch =
@@ -126,13 +140,17 @@ export default function Jobs() {
       const matchesPlatform =
         platformFilter === "all" || job.source_platform === platformFilter;
 
-      return matchesSearch && matchesStatus && matchesPlatform;
+      // Hide expired postings from the default view; only show them when the
+      // user explicitly filters to "Expired / Dead".
+      const hideExpired = statusFilter !== "posting_expired" && job.status === "posting_expired";
+
+      return matchesSearch && matchesStatus && matchesPlatform && !hideExpired;
     });
   }, [pipelineJobs, searchQuery, statusFilter, platformFilter]);
 
   const matchedJobs = useMemo(() => {
-    return pipelineJobs.filter((j) => j.match_score);
-  }, [pipelineJobs]);
+    return livePipelineJobs.filter((j) => j.match_score);
+  }, [livePipelineJobs]);
 
   const handleMatchJob = (jobId: string) => {
     if (!cvProfile) {
