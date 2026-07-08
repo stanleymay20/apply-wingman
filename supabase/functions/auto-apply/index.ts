@@ -488,7 +488,7 @@ ${userName}`;
         const { data: emailData, error: emailError } = await resend.emails.send({
           from: `${userName} via ${SENDER_NAME} <${SENDER_EMAIL}>`,
           to: [actualRecipient],
-          reply_to: userEmail,
+          reply_to: REPLY_TO_EMAIL || userEmail,
           subject: `${subjectPrefix}Application for ${jobTitle} - ${userName}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
