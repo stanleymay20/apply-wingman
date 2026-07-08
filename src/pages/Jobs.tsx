@@ -148,20 +148,80 @@ export default function Jobs() {
     );
   };
 
-  const handleMatchAll = () => {
+  const handleMatchAll = async () => {
     if (!cvProfile) {
       toast.error("Please upload your CV first to enable matching");
       return;
     }
+    if (batchMatching) return;
+
     const unmatchedJobs = pipelineJobs.filter((job) => !job.match_score);
     if (unmatchedJobs.length === 0) {
       toast.info("All jobs are already matched");
       return;
     }
-    toast.info(`Matching ${Math.min(unmatchedJobs.length, 5)} jobs...`);
-    unmatchedJobs.slice(0, 5).forEach((job) => {
-      matchJob({ jobId: job.id, cvProfileId: cvProfile.id });
-    });
+
+    const total = unmatchedJobs.length;
+    const cvProfileId = cvProfile.id;
+    const toastId = "match-all";
+    let done = 0;
+    let failed = 0;
+
+    setBatchMatching(true);
+    setMatchProgress({ done: 0, total });
+    toast.loading(`Matching 0/${total} jobs…`, { id: toastId });
+
+    // Process the entire unmatched batch with bounded concurrency. Each job is
+    // scored server-side (match-job runs its own AI retry/backoff), so there is
+    // NO client-side abort/timeout wrapping the batch — it runs until every job
+    // is done. Failures are skipped and surfaced, not silently dropped.
+    const CONCURRENCY = 4;
+    const queue = [...unmatchedJobs];
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        const job = queue.shift();
+        if (!job) break;
+        try {
+          const { data, error } = await supabase.functions.invoke("match-job", {
+            body: { jobId: job.id, cvProfileId },
+          });
+          if (error) throw new Error(error.message || "Request failed");
+          if (data?.error) throw new Error(data.error);
+        } catch (e) {
+          failed += 1;
+          console.warn(`Match failed for job ${job.id}:`, e);
+        } finally {
+          done += 1;
+          setMatchProgress({ done, total });
+          toast.loading(`Matching ${done}/${total} jobs…`, { id: toastId });
+        }
+      }
+    };
+
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker())
+      );
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      setBatchMatching(false);
+      setMatchProgress(null);
+
+      const matched = total - failed;
+      if (failed === 0) {
+        toast.success(`Matched all ${total} jobs`, { id: toastId });
+      } else if (matched === 0) {
+        toast.error(`Could not match any jobs (${failed} failed). Please try again.`, {
+          id: toastId,
+        });
+      } else {
+        toast.warning(
+          `Matched ${matched}/${total} jobs. ${failed} skipped due to errors.`,
+          { id: toastId }
+        );
+      }
+    }
   };
 
   const handleJobClick = (job: (typeof jobs)[number]) => {
