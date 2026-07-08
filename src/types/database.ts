@@ -164,6 +164,7 @@ export interface Job {
   requirements: string[] | null;
   benefits: string[] | null;
   source_platform: SourcePlatform;
+  source_type: "direct_employer" | "agency_or_aggregator";
   source_url: string;
   external_id: string | null;
   posted_at: string | null;

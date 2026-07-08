@@ -47,8 +47,14 @@ import { JobDetailsPanel } from "@/components/jobs/JobDetailsPanel";
 import { SavedSearchesPanel } from "@/components/jobs/SavedSearchesPanel";
 import { BulkApplyDialog } from "@/components/jobs/BulkApplyDialog";
 import { DiscoveryStatusPanel } from "@/components/jobs/DiscoveryStatusPanel";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { HelpTooltip } from "@/components/common/HelpTooltip";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+const isAgencyJob = (job: { source_type?: string | null }) =>
+  job.source_type === "agency_or_aggregator";
 
 type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired";
 
@@ -85,6 +91,7 @@ export default function Jobs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [includeAgency, setIncludeAgency] = useState(false);
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [companyTrackerOpen, setCompanyTrackerOpen] = useState(false);
   const [bulkApplyOpen, setBulkApplyOpen] = useState(false);
@@ -92,8 +99,18 @@ export default function Jobs() {
   const [selectedJob, setSelectedJob] = useState<(typeof jobs)[0] | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
+  // Agency/aggregator listings (e.g. Jobgether) route candidates into a
+  // third-party funnel rather than the real employer, so they're excluded from
+  // the primary matching/apply pipeline unless the user opts in.
+  const agencyCount = useMemo(() => jobs.filter(isAgencyJob).length, [jobs]);
+
+  const pipelineJobs = useMemo(
+    () => (includeAgency ? jobs : jobs.filter((j) => !isAgencyJob(j))),
+    [jobs, includeAgency]
+  );
+
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
+    return pipelineJobs.filter((job) => {
       const matchesSearch =
         searchQuery === "" ||
         job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -106,11 +123,11 @@ export default function Jobs() {
 
       return matchesSearch && matchesStatus && matchesPlatform;
     });
-  }, [jobs, searchQuery, statusFilter, platformFilter]);
+  }, [pipelineJobs, searchQuery, statusFilter, platformFilter]);
 
   const matchedJobs = useMemo(() => {
-    return jobs.filter((j) => j.match_score);
-  }, [jobs]);
+    return pipelineJobs.filter((j) => j.match_score);
+  }, [pipelineJobs]);
 
   const handleMatchJob = (jobId: string) => {
     if (!cvProfile) {
@@ -131,7 +148,7 @@ export default function Jobs() {
       toast.error("Please upload your CV first to enable matching");
       return;
     }
-    const unmatchedJobs = jobs.filter((job) => !job.match_score);
+    const unmatchedJobs = pipelineJobs.filter((job) => !job.match_score);
     if (unmatchedJobs.length === 0) {
       toast.info("All jobs are already matched");
       return;
@@ -252,7 +269,7 @@ export default function Jobs() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {jobs.filter((j) => (j.match_score || 0) >= 70).length}
+                      {pipelineJobs.filter((j) => (j.match_score || 0) >= 70).length}
                     </p>
                     <p className="text-sm text-muted-foreground">Good Fit (70%+)</p>
                   </div>
@@ -267,7 +284,7 @@ export default function Jobs() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {jobs.filter((j) => !j.match_score).length}
+                      {pipelineJobs.filter((j) => !j.match_score).length}
                     </p>
                     <p className="text-sm text-muted-foreground">Unmatched</p>
                   </div>
@@ -329,8 +346,25 @@ export default function Jobs() {
                   Bulk Apply
                 </Button>
               </div>
+              <div className="flex items-center gap-3 mt-4 pt-4 border-t">
+                <Switch
+                  id="include-agency"
+                  checked={includeAgency}
+                  onCheckedChange={setIncludeAgency}
+                />
+                <Label htmlFor="include-agency" className="cursor-pointer text-sm">
+                  Include agency/aggregator listings
+                  {agencyCount > 0 && (
+                    <span className="text-muted-foreground font-normal">
+                      {" "}({agencyCount} hidden)
+                    </span>
+                  )}
+                </Label>
+                <HelpTooltip content="Third-party boards like Jobgether post roles on behalf of unnamed employers and route you into their own screening funnel. They're excluded from Match All, Good Fit counts and Bulk Apply by default." />
+              </div>
             </CardContent>
           </Card>
+
 
           {/* Jobs Table */}
           {filteredJobs.length === 0 ? (

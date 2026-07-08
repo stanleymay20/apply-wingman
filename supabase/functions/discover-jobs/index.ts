@@ -24,6 +24,10 @@ interface DiscoveredJob {
   requirements: string[];
   is_remote: boolean;
   job_type: string;
+  // 'direct_employer' (real hiring company) vs 'agency_or_aggregator'
+  // (third-party staffing/matching boards like Jobgether that route the
+  // candidate into their own screening funnel instead of the real employer).
+  source_type?: "direct_employer" | "agency_or_aggregator";
 }
 
 const FIRECRAWL_SEARCH_TIMEOUT_MS = 18_000;
@@ -151,6 +155,13 @@ function prettifySlug(slug: string): string {
 const JOB_TITLE_TOKENS =
   /\b(engineer|scientist|analyst|developer|programmer|architect|intern|internship|recruiter|manager)\b/i;
 
+// Broader seniority/role vocabulary. Real employer names essentially never
+// stack two of these together, but corrupted title-shaped values do (e.g.
+// "Senior Data Science Consultant"). Counting matches lets us flag title-like
+// values that dodge the fixed keyword list.
+const ROLE_WORD_TOKENS =
+  /\b(senior|lead|principal|staff|junior|mid|consultant|engineer|manager|analyst|scientist|specialist|director|developer|architect|coordinator|administrator|designer|recruiter|programmer|intern|associate|officer|executive|head|vp)\b/gi;
+
 // True when the candidate company string is really a search keyword or a job
 // title fragment rather than an employer name.
 function isKeywordLike(company: string, keywords: string[]): boolean {
@@ -167,7 +178,30 @@ function isKeywordLike(company: string, keywords: string[]): boolean {
     return true;
   }
   // Generic job-title shapes (covers roles outside the current keyword set).
-  return JOB_TITLE_TOKENS.test(c);
+  if (JOB_TITLE_TOKENS.test(c)) return true;
+  // Title-shaped multi-word values: 2+ seniority/role tokens is a strong
+  // signal this is a job title, not an employer name.
+  const roleMatches = company.match(ROLE_WORD_TOKENS);
+  if (roleMatches && roleMatches.length >= 2) return true;
+  return false;
+}
+
+// Known third-party agency / aggregator ATS board slugs. These publish roles
+// "on behalf of" unnamed partner employers and route applicants into their own
+// screening funnel, so they must not pollute the direct-apply pipeline.
+const AGENCY_BOARD_SLUGS = new Set<string>(["jobgether"]);
+
+// Classify a discovered job as a direct employer vs an agency/aggregator by
+// checking the ATS board slug (authoritative) and the resolved company name.
+function classifySourceType(
+  url: string,
+  company: string,
+): "direct_employer" | "agency_or_aggregator" {
+  const slug = (slugFromUrl(url) || "").toLowerCase();
+  if (slug && AGENCY_BOARD_SLUGS.has(slug)) return "agency_or_aggregator";
+  const c = (company || "").trim().toLowerCase();
+  if (AGENCY_BOARD_SLUGS.has(c)) return "agency_or_aggregator";
+  return "direct_employer";
 }
 
 // Resolve a trustworthy company name. Rejects blanks, placeholders and job
@@ -580,6 +614,7 @@ serve(async (req) => {
       if (!matchesAnyKeyword(job.title, job.description, keywords)) return false;
       // Final guard: never persist a search keyword (or a blank) as the company.
       job.company = sanitizeCompany(job.company, job.source_url, keywords);
+      job.source_type = classifySourceType(job.source_url, job.company);
       allJobs.push(job);
       return true;
     };
@@ -839,6 +874,7 @@ serve(async (req) => {
             requirements: [],
             is_remote: isRemote,
             job_type: jobType,
+            source_type: classifySourceType(result.url, resolvedCompany),
           });
           firecrawlJobCount++;
         }
