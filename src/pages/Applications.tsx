@@ -61,7 +61,7 @@ import { useAutoApply } from "@/hooks/useAutoApply";
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
 export default function Applications() {
-  const { applications, isLoading, refetch } = useApplications();
+  const { applications, isLoading, refetch, updateStatus } = useApplications();
   const { createJob, isLoading: jobsLoading } = useJobs();
   const { autoApply, isApplying } = useAutoApply();
   
