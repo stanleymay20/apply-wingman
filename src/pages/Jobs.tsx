@@ -283,7 +283,7 @@ export default function Jobs() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {jobs.filter((j) => !j.match_score).length}
+                      {pipelineJobs.filter((j) => !j.match_score).length}
                     </p>
                     <p className="text-sm text-muted-foreground">Unmatched</p>
                   </div>
