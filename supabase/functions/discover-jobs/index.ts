@@ -24,6 +24,10 @@ interface DiscoveredJob {
   requirements: string[];
   is_remote: boolean;
   job_type: string;
+  // 'direct_employer' (real hiring company) vs 'agency_or_aggregator'
+  // (third-party staffing/matching boards like Jobgether that route the
+  // candidate into their own screening funnel instead of the real employer).
+  source_type?: "direct_employer" | "agency_or_aggregator";
 }
 
 const FIRECRAWL_SEARCH_TIMEOUT_MS = 18_000;
