@@ -61,7 +61,7 @@ import { useAutoApply } from "@/hooks/useAutoApply";
 type SourcePlatform = "linkedin" | "indeed" | "greenhouse" | "lever" | "company_website" | "other";
 
 export default function Applications() {
-  const { applications, isLoading, refetch } = useApplications();
+  const { applications, isLoading, refetch, updateStatus } = useApplications();
   const { createJob, isLoading: jobsLoading } = useJobs();
   const { autoApply, isApplying } = useAutoApply();
   
@@ -553,6 +553,50 @@ export default function Applications() {
                               </Button>
                             }
                           />
+
+                          {/* Finish manual application step */}
+                          {app.status === "manual_action_required" && app.job?.source_url && (
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-yellow-600 dark:text-yellow-400 border-yellow-500/40"
+                                    onClick={() =>
+                                      window.open(app.job!.source_url, "_blank", "noopener,noreferrer")
+                                    }
+                                  >
+                                    <ExternalLink className="w-4 h-4 mr-1" />
+                                    Finish
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Open the application form to complete it manually
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-success hover:text-success"
+                                    onClick={() => {
+                                      updateStatus({ id: app.id, status: "submitted" });
+                                      toast.success("Marked as applied", {
+                                        description: `${app.job?.company || "Application"} moved to Submitted.`,
+                                      });
+                                    }}
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  I've submitted it — mark as applied
+                                </TooltipContent>
+                              </Tooltip>
+                            </>
+                          )}
 
                           {/* Auto Apply / Retry Button */}
                           {(app.status === "pending" || app.status === "failed") && app.job && (
