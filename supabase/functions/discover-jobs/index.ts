@@ -874,6 +874,7 @@ serve(async (req) => {
             requirements: [],
             is_remote: isRemote,
             job_type: jobType,
+            source_type: classifySourceType(result.url, resolvedCompany),
           });
           firecrawlJobCount++;
         }
