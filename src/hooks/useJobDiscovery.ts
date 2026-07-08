@@ -45,6 +45,9 @@ const LAST_RUN_QUERY_KEY = ["discovery-last-run"];
 // searches + AI enhancement), but without a client timeout a hung function
 // leaves the UI silently stuck forever.
 const DISCOVERY_TIMEOUT_MS = 120_000;
+const MATCH_TIMEOUT_MS = 30_000;
+const MAX_AUTO_MATCH_JOBS = 10;
+const MATCH_BATCH_SIZE = 3;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -124,24 +127,25 @@ export function useJobDiscovery() {
 
   // Trigger job matching for newly discovered jobs
   const matchJobsInBackground = useCallback(async (jobIds: string[]) => {
-    if (!cvProfile?.id || jobIds.length === 0) return;
+    const jobIdsToMatch = jobIds.slice(0, MAX_AUTO_MATCH_JOBS);
+    if (!cvProfile?.id || jobIdsToMatch.length === 0) return;
     
     setIsMatching(true);
     const matchResults: { jobId: string; score: number; error?: string }[] = [];
-    
-    for (const jobId of jobIds) {
+
+    const matchOneJob = async (jobId: string) => {
       try {
         const { data, error } = await withTimeout(
           supabase.functions.invoke("match-job", { body: { jobId, cvProfileId: cvProfile.id } }),
-          DISCOVERY_TIMEOUT_MS,
+          MATCH_TIMEOUT_MS,
           "Job matching"
         );
         
         if (error) {
           console.error(`Match error for job ${jobId}:`, error);
-          matchResults.push({ jobId, score: 0, error: error.message });
+          return { jobId, score: 0, error: error.message };
         } else if (data?.success) {
-          matchResults.push({ jobId, score: data.data?.score || 0 });
+          const result = { jobId, score: data.data?.score || 0 };
           
           // Notify for high match scores (80%+)
           if (data.data?.score >= 80) {
@@ -171,17 +175,27 @@ export function useJobDiscovery() {
               });
             }
           }
+          return result;
         }
-        
-        // Small delay between API calls to avoid rate limiting
-        await new Promise(r => setTimeout(r, 500));
       } catch (err) {
         console.error(`Match exception for job ${jobId}:`, err);
-        matchResults.push({ jobId, score: 0, error: String(err) });
+        return { jobId, score: 0, error: String(err) };
       }
+      return { jobId, score: 0, error: "No match score returned" };
+    };
+
+    try {
+      for (let i = 0; i < jobIdsToMatch.length; i += MATCH_BATCH_SIZE) {
+        const batch = jobIdsToMatch.slice(i, i + MATCH_BATCH_SIZE);
+        matchResults.push(...await Promise.all(batch.map(matchOneJob)));
+
+        if (i + MATCH_BATCH_SIZE < jobIdsToMatch.length) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+    } finally {
+      setIsMatching(false);
     }
-    
-    setIsMatching(false);
     
     const successCount = matchResults.filter(r => !r.error).length;
     const highMatches = matchResults.filter(r => r.score >= 80).length;
@@ -224,12 +238,15 @@ export function useJobDiscovery() {
         }
         if (data?.error) {
           console.error("Data error:", data.error, "sources:", data.sources);
+          const userFacingError = data.code === "AI_NOT_CONFIGURED"
+            ? "AI service is not configured. Open Admin → AI Provider and choose an available provider, then try discovery again."
+            : data.error;
           const sourceSummary = data.sources
             ? ` [${Object.entries(data.sources as Record<string, string>)
                 .map(([name, status]) => `${name}: ${status}`)
                 .join(", ")}]`
             : "";
-          throw new Error(data.error + sourceSummary);
+          throw new Error(userFacingError + sourceSummary);
         }
         return {
           jobs: (data?.jobs || []) as DiscoveredJob[],

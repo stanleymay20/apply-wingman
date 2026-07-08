@@ -26,6 +26,23 @@ interface DiscoveredJob {
   job_type: string;
 }
 
+const FIRECRAWL_SEARCH_TIMEOUT_MS = 18_000;
+const AI_ENHANCEMENT_TIMEOUT_MS = 12_000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 // Aggregator/search-result pages list many jobs but can't be applied to, so
 // they must never enter the pipeline as if they were individual postings.
 // URL shapes of individual postings are allowed through first; everything
@@ -37,6 +54,8 @@ const SINGLE_JOB_URL_PATTERNS = [
   /jobs\.lever\.co\/[^/]+\/[0-9a-f][0-9a-f-]{7,}/,
   /myworkdayjobs\.com\/.+\/job\//,
   /jobs\.smartrecruiters\.com\/[^/]+\/\d+/,
+  /\/jobs?\/(?!search|browse|find|all|view-all-opportunities|opportunities)[^/?#]+/,
+  /\/careers?\/(?!search|browse|find|all|opportunities)[^/?#]+/,
 ];
 
 const AGGREGATOR_URL_PATTERNS = [
@@ -49,6 +68,10 @@ const AGGREGATOR_URL_PATTERNS = [
   /greenhouse\.io\/[^/]+\/?(\?|$)/,                                // company board root
   /jobs\.lever\.co\/[^/]+\/?(\?|$)/,                               // company board root
   /\/jobs\/search(\/|\?|$)/,
+  /\/go\/view-all-opportunities\//,
+  /\/view-all-opportunities(\/|\?|$)/,
+  /\/all-?opportunities(\/|\?|$)/,
+  /\/search-?careers?(\/|\?|$)/,
   /\/(search|browse|find)-?jobs?(\/|\?|$)/,
 ];
 
@@ -57,6 +80,8 @@ const AGGREGATOR_TITLE_PATTERNS = [
   /\bjobs\s+(in|near)\s+/i,                                          // "Analyst Jobs in Berlin"
   /\bjobs?,\s*(employment|vacancies|careers)\b/i,                    // "… Jobs, Employment | Indeed"
   /^\s*(top|best|latest|newest|browse|search|find)\b.*\b(jobs|openings|vacancies)\b/i,
+  /^\s*view\s+all\s+(opportunities|jobs|openings)\s*$/i,
+  /^\s*search\s+(careers|jobs|opportunities)\s*$/i,
 ];
 
 function isAggregatorPage(url: string, title: string): boolean {
@@ -450,6 +475,7 @@ serve(async (req) => {
     const searchErrors: { keyword: string; status?: number; message: string }[] = [];
     let searchAttempts = 0;
     let aggregatorsFiltered = 0;
+    let firecrawlJobCount = 0;
 
     // Shared filtering pipeline for non-Firecrawl sources: dedupe, aggregator
     // filter, and keyword relevance — same gates the Firecrawl results face.
@@ -478,11 +504,13 @@ serve(async (req) => {
           return { name, jobs: [] as DiscoveredJob[] };
         });
 
-    const freeSourceTasks = [
-      // Always-on, quota-free feeds (Arbeitnow is Germany/EU-focused).
-      runSource("arbeitnow", fetchArbeitnowJobs),
-      runSource("remoteok", fetchRemoteOkJobs),
-    ];
+    const freeSourceTasks = [];
+    if (platforms.length === 0 || platforms.includes("arbeitnow")) {
+      freeSourceTasks.push(runSource("arbeitnow", fetchArbeitnowJobs));
+    }
+    if (platforms.length === 0 || platforms.includes("remoteok")) {
+      freeSourceTasks.push(runSource("remoteok", fetchRemoteOkJobs));
+    }
     if (platforms.length === 0 || platforms.includes("greenhouse")) {
       freeSourceTasks.push(runSource("greenhouse_refresh", () => refreshGreenhouseBoards(supabaseService, userId)));
     }
@@ -501,7 +529,9 @@ serve(async (req) => {
       lever: "site:jobs.lever.co",
       workday: "site:myworkdayjobs.com",
       smartrecruiters: "site:jobs.smartrecruiters.com",
+      company_website: "(site:careers.* OR site:jobs.* OR inurl:careers OR inurl:jobs)",
     };
+    const firecrawlPlatforms = platforms.filter((p) => platformSites[p]);
 
     // Build location string - only if provided, otherwise don't constrain
     const locationStr = locations.length > 0 && !locations.every(l => l.toLowerCase() === "remote")
@@ -510,9 +540,10 @@ serve(async (req) => {
 
     // Search for each keyword - use exact phrase matching for precision
     // (skipped entirely when Firecrawl isn't configured)
-    for (const keyword of firecrawlKey ? keywords.slice(0, 5) : []) {
+    const shouldRunFirecrawl = Boolean(firecrawlKey) && (platforms.length === 0 || firecrawlPlatforms.length > 0);
+    for (const keyword of shouldRunFirecrawl ? keywords.slice(0, 5) : []) {
       // Build platform filter - prioritize user-selected platforms
-      const selectedPlatformFilters = platforms
+      const selectedPlatformFilters = (platforms.length > 0 ? firecrawlPlatforms : Object.keys(platformSites))
         .map((p) => platformSites[p])
         .filter(Boolean);
       
@@ -543,9 +574,12 @@ serve(async (req) => {
 
       searchAttempts++;
       try {
-        const doFirecrawlFetch = () =>
-          fetch("https://api.firecrawl.dev/v1/search", {
+        const doFirecrawlFetch = () => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), FIRECRAWL_SEARCH_TIMEOUT_MS);
+          return fetch("https://api.firecrawl.dev/v1/search", {
             method: "POST",
+            signal: controller.signal,
             headers: {
               "Authorization": `Bearer ${firecrawlKeys[firecrawlKeyIdx]}`,
               "Content-Type": "application/json",
@@ -559,7 +593,8 @@ serve(async (req) => {
                 formats: ["markdown"],
               },
             }),
-          });
+          }).finally(() => clearTimeout(timer));
+        };
 
         let searchResponse = await doFirecrawlFetch();
 
@@ -605,6 +640,8 @@ serve(async (req) => {
           else if (url.includes("lever.co")) detectedPlatform = "lever";
           else if (url.includes("workday") || url.includes("myworkdayjobs")) detectedPlatform = "workday";
           else if (url.includes("smartrecruiters")) detectedPlatform = "smartrecruiters";
+          else if (url.includes("careers") || url.includes("/jobs") || url.includes("/job")) detectedPlatform = "company_website";
+          else detectedPlatform = "other";
 
           // Extract job info from result
           const title = result.title || "Job Opening";
@@ -700,9 +737,12 @@ serve(async (req) => {
             is_remote: isRemote,
             job_type: jobType,
           });
+          firecrawlJobCount++;
         }
       } catch (searchError) {
-        const errMsg = searchError instanceof Error ? searchError.message : String(searchError);
+        const errMsg = searchError instanceof DOMException && searchError.name === "AbortError"
+          ? `Firecrawl search timed out after ${Math.round(FIRECRAWL_SEARCH_TIMEOUT_MS / 1000)}s`
+          : searchError instanceof Error ? searchError.message : String(searchError);
         console.error(`Search error for keyword "${keyword}":`, errMsg);
         searchErrors.push({ keyword, message: errMsg });
         continue;
@@ -710,13 +750,15 @@ serve(async (req) => {
     }
 
     // Record Firecrawl's outcome — a failure here no longer aborts the run.
-    if (firecrawlKey) {
+    if (firecrawlKey && !shouldRunFirecrawl) {
+      sourceReport.firecrawl = "skipped: no selected Firecrawl-backed platforms";
+    } else if (firecrawlKey) {
       if (searchAttempts > 0 && searchErrors.length === searchAttempts) {
         sourceReport.firecrawl = searchErrors.some((e) => e.status === 402)
           ? "quota_exceeded"
           : `failed: ${searchErrors[0]?.message ?? "all searches failed"}`;
       } else {
-        sourceReport.firecrawl = `ok: ${allJobs.length} jobs`;
+        sourceReport.firecrawl = `ok: ${firecrawlJobCount} jobs`;
       }
     }
 
@@ -761,21 +803,25 @@ serve(async (req) => {
     if (allJobs.length > 0) {
       try {
         const topJobs = allJobs.slice(0, 5);
-        const enhanced = await callAIJson<Array<{ title?: string; company?: string; requirements?: string[] }>>({
-          messages: [
-            {
-              role: "system",
-              content: "You extract structured job information from job listing descriptions. Return a JSON array only, no markdown.",
-            },
-            {
-              role: "user",
-              content: `Extract requirements from these job descriptions. Return JSON array with objects having: title, company, requirements (array of 3-5 key requirements as strings).
+        const enhanced = await withTimeout(
+          callAIJson<Array<{ title?: string; company?: string; requirements?: string[] }>>({
+            messages: [
+              {
+                role: "system",
+                content: "You extract structured job information from job listing descriptions. Return a JSON array only, no markdown.",
+              },
+              {
+                role: "user",
+                content: `Extract requirements from these job descriptions. Return JSON array with objects having: title, company, requirements (array of 3-5 key requirements as strings).
 
 ${JSON.stringify(topJobs.map((j) => ({ title: j.title, company: j.company, description: j.description.slice(0, 500) })), null, 2)}`,
-            },
-          ],
-          temperature: 0.1,
-        });
+              },
+            ],
+            temperature: 0.1,
+          }),
+          AI_ENHANCEMENT_TIMEOUT_MS,
+          "AI enhancement",
+        );
         for (let i = 0; i < Math.min(enhanced.length, topJobs.length); i++) {
           if (enhanced[i]?.requirements && Array.isArray(enhanced[i].requirements)) {
             allJobs[i].requirements = enhanced[i].requirements;

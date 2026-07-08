@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Dialog,
@@ -120,10 +120,17 @@ export function OnboardingWizard({ open, onOpenChange }: OnboardingWizardProps) 
     onOpenChange(false);
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      localStorage.setItem("onboarding_completed", "true");
+    }
+    onOpenChange(nextOpen);
+  };
+
   const currentStepData = steps[currentStep];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
         {/* Progress indicator */}
         <div className="px-6 pt-6">
@@ -233,19 +240,23 @@ export function OnboardingWizard({ open, onOpenChange }: OnboardingWizardProps) 
 
 export function useOnboarding() {
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const location = useLocation();
 
   useEffect(() => {
-    if (user) {
+    if (user && location.pathname === "/") {
       const hasSeenOnboarding = localStorage.getItem("onboarding_completed");
-      const isNewUser = !hasSeenOnboarding;
+      const createdAt = profile?.created_at ? new Date(profile.created_at).getTime() : Date.now();
+      const accountAgeMs = Date.now() - createdAt;
+      const isNewUser = !hasSeenOnboarding && accountAgeMs < 24 * 60 * 60 * 1000;
       if (isNewUser) {
         // Small delay to let the page load first
         const timer = setTimeout(() => setShowOnboarding(true), 1000);
         return () => clearTimeout(timer);
       }
     }
-  }, [user]);
+    setShowOnboarding(false);
+  }, [user, profile?.created_at, location.pathname]);
 
   const completeOnboarding = () => {
     localStorage.setItem("onboarding_completed", "true");
