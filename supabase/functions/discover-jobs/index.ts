@@ -54,8 +54,8 @@ const SINGLE_JOB_URL_PATTERNS = [
   /jobs\.lever\.co\/[^/]+\/[0-9a-f][0-9a-f-]{7,}/,
   /myworkdayjobs\.com\/.+\/job\//,
   /jobs\.smartrecruiters\.com\/[^/]+\/\d+/,
-  /\/job(s)?\/[^/?#]+/,
-  /\/careers?\/[^/?#]+/,
+  /\/jobs?\/(?!search|browse|find|all|view-all-opportunities|opportunities)[^/?#]+/,
+  /\/careers?\/(?!search|browse|find|all|opportunities)[^/?#]+/,
 ];
 
 const AGGREGATOR_URL_PATTERNS = [
