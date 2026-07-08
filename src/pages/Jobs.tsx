@@ -173,7 +173,7 @@ export default function Jobs() {
     }
     if (batchMatching) return;
 
-    const unmatchedJobs = pipelineJobs.filter((job) => !job.match_score);
+    const unmatchedJobs = livePipelineJobs.filter((job) => !job.match_score);
     if (unmatchedJobs.length === 0) {
       toast.info("All jobs are already matched");
       return;
