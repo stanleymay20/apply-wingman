@@ -1,0 +1,63 @@
+# Merging to GitHub does NOT deploy anything to the Supabase backend by
+# itself — edge functions and migrations otherwise only ship when deployed
+# through Lovable (see CLAUDE.md, "how the backend actually deploys").
+# This workflow closes that gap automatically once credentials exist.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  – personal access token (supabase.com/dashboard/account/tokens)
+#   SUPABASE_DB_PASSWORD   – database password (needed for `supabase db push`)
+#
+# If the secrets are not configured, the workflow skips with a notice instead
+# of failing, since Lovable Cloud projects may not expose these credentials.
+
+name: Deploy Supabase backend
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/**']
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - name: Check credentials
+        id: creds
+        run: |
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SUPABASE_ACCESS_TOKEN is not configured — skipping backend deploy. Deploy this change through Lovable instead (see CLAUDE.md)."
+          fi
+          if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+            echo "dbpass=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dbpass=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.token == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        if: steps.creds.outputs.token == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        if: steps.creds.outputs.token == 'true'
+        run: supabase link --project-ref jlsoiujwcjgmvijcmvas
+
+      - name: Apply migrations
+        if: steps.creds.outputs.token == 'true' && steps.creds.outputs.dbpass == 'true'
+        run: supabase db push
+
+      - name: Deploy edge functions
+        if: steps.creds.outputs.token == 'true'
+        run: supabase functions deploy
