@@ -65,6 +65,8 @@ const PLATFORM_OPTIONS = [
   { value: "all", label: "All Platforms" },
   { value: "linkedin", label: "LinkedIn" },
   { value: "indeed", label: "Indeed" },
+  { value: "remoteok", label: "RemoteOK" },
+  { value: "arbeitnow", label: "ArbeitNow" },
   { value: "greenhouse", label: "Greenhouse" },
   { value: "lever", label: "Lever" },
   { value: "workday", label: "Workday" },

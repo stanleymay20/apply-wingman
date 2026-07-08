@@ -35,8 +35,12 @@ export type ApplicationMethod =
 export type SourcePlatform = 
   | "linkedin" 
   | "indeed" 
+  | "remoteok"
+  | "arbeitnow"
   | "greenhouse" 
   | "lever" 
+  | "workday"
+  | "smartrecruiters"
   | "company_website" 
   | "other";
 
