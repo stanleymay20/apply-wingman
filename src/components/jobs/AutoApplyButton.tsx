@@ -219,8 +219,8 @@ ${coverLetter || ""}
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant={variant} size={size} disabled={isApplying}>
-            {isApplying ? (
+          <Button variant={variant} size={size} disabled={isApplying || ensuring}>
+            {isApplying || ensuring ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Rocket className="w-4 h-4 mr-2" />
