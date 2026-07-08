@@ -725,6 +725,9 @@ export type Database = {
           match_details: Json | null
           match_score: number | null
           posted_at: string | null
+          recruiter_email: string | null
+          recruiter_email_confidence: string | null
+          recruiter_email_extracted_at: string | null
           requirements: string[] | null
           salary_currency: string | null
           salary_max: number | null
@@ -752,6 +755,9 @@ export type Database = {
           match_details?: Json | null
           match_score?: number | null
           posted_at?: string | null
+          recruiter_email?: string | null
+          recruiter_email_confidence?: string | null
+          recruiter_email_extracted_at?: string | null
           requirements?: string[] | null
           salary_currency?: string | null
           salary_max?: number | null
@@ -779,6 +785,9 @@ export type Database = {
           match_details?: Json | null
           match_score?: number | null
           posted_at?: string | null
+          recruiter_email?: string | null
+          recruiter_email_confidence?: string | null
+          recruiter_email_extracted_at?: string | null
           requirements?: string[] | null
           salary_currency?: string | null
           salary_max?: number | null
