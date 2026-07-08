@@ -147,7 +147,7 @@ export default function Jobs() {
       toast.error("Please upload your CV first to enable matching");
       return;
     }
-    const unmatchedJobs = jobs.filter((job) => !job.match_score);
+    const unmatchedJobs = pipelineJobs.filter((job) => !job.match_score);
     if (unmatchedJobs.length === 0) {
       toast.info("All jobs are already matched");
       return;
