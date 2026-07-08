@@ -26,6 +26,14 @@ week. Verify deploys against runtime behaviour (edge function logs in
 Lovable Cloud), not the Lovable "up to date" indicator — that indicator only
 reflects the code sync.
 
+## Workflow
+
+Owner's standing instruction: always merge finished work into `main` and
+push, so Lovable syncs it and can redeploy the backend. Work still happens on
+a feature branch first, but don't leave it unmerged waiting for a PR review.
+After merging backend changes, prompt Lovable to redeploy functions / apply
+migrations (see above).
+
 ## Notes for Claude sessions
 
 - The Supabase MCP connector is scoped to the user's personal Supabase org
