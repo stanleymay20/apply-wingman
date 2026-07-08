@@ -531,6 +531,7 @@ serve(async (req) => {
       smartrecruiters: "site:jobs.smartrecruiters.com",
       company_website: "(site:careers.* OR site:jobs.* OR inurl:careers OR inurl:jobs)",
     };
+    const firecrawlPlatforms = platforms.filter((p) => platformSites[p]);
 
     // Build location string - only if provided, otherwise don't constrain
     const locationStr = locations.length > 0 && !locations.every(l => l.toLowerCase() === "remote")
@@ -539,9 +540,10 @@ serve(async (req) => {
 
     // Search for each keyword - use exact phrase matching for precision
     // (skipped entirely when Firecrawl isn't configured)
-    for (const keyword of firecrawlKey ? keywords.slice(0, 5) : []) {
+    const shouldRunFirecrawl = Boolean(firecrawlKey) && (platforms.length === 0 || firecrawlPlatforms.length > 0);
+    for (const keyword of shouldRunFirecrawl ? keywords.slice(0, 5) : []) {
       // Build platform filter - prioritize user-selected platforms
-      const selectedPlatformFilters = platforms
+      const selectedPlatformFilters = (platforms.length > 0 ? firecrawlPlatforms : Object.keys(platformSites))
         .map((p) => platformSites[p])
         .filter(Boolean);
       
@@ -638,7 +640,8 @@ serve(async (req) => {
           else if (url.includes("lever.co")) detectedPlatform = "lever";
           else if (url.includes("workday") || url.includes("myworkdayjobs")) detectedPlatform = "workday";
           else if (url.includes("smartrecruiters")) detectedPlatform = "smartrecruiters";
-          else if (platforms.includes("company_website")) detectedPlatform = "company_website";
+          else if (url.includes("careers") || url.includes("/jobs") || url.includes("/job")) detectedPlatform = "company_website";
+          else detectedPlatform = "other";
 
           // Extract job info from result
           const title = result.title || "Job Opening";
@@ -737,7 +740,9 @@ serve(async (req) => {
           firecrawlJobCount++;
         }
       } catch (searchError) {
-        const errMsg = searchError instanceof Error ? searchError.message : String(searchError);
+        const errMsg = searchError instanceof DOMException && searchError.name === "AbortError"
+          ? `Firecrawl search timed out after ${Math.round(FIRECRAWL_SEARCH_TIMEOUT_MS / 1000)}s`
+          : searchError instanceof Error ? searchError.message : String(searchError);
         console.error(`Search error for keyword "${keyword}":`, errMsg);
         searchErrors.push({ keyword, message: errMsg });
         continue;
