@@ -496,11 +496,13 @@ serve(async (req) => {
           return { name, jobs: [] as DiscoveredJob[] };
         });
 
-    const freeSourceTasks = [
-      // Always-on, quota-free feeds (Arbeitnow is Germany/EU-focused).
-      runSource("arbeitnow", fetchArbeitnowJobs),
-      runSource("remoteok", fetchRemoteOkJobs),
-    ];
+    const freeSourceTasks = [];
+    if (platforms.length === 0 || platforms.includes("arbeitnow")) {
+      freeSourceTasks.push(runSource("arbeitnow", fetchArbeitnowJobs));
+    }
+    if (platforms.length === 0 || platforms.includes("remoteok")) {
+      freeSourceTasks.push(runSource("remoteok", fetchRemoteOkJobs));
+    }
     if (platforms.length === 0 || platforms.includes("greenhouse")) {
       freeSourceTasks.push(runSource("greenhouse_refresh", () => refreshGreenhouseBoards(supabaseService, userId)));
     }
@@ -628,6 +630,7 @@ serve(async (req) => {
           else if (url.includes("lever.co")) detectedPlatform = "lever";
           else if (url.includes("workday") || url.includes("myworkdayjobs")) detectedPlatform = "workday";
           else if (url.includes("smartrecruiters")) detectedPlatform = "smartrecruiters";
+          else if (platforms.includes("company_website")) detectedPlatform = "company_website";
 
           // Extract job info from result
           const title = result.title || "Job Opening";
