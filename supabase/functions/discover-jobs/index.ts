@@ -54,6 +54,8 @@ const SINGLE_JOB_URL_PATTERNS = [
   /jobs\.lever\.co\/[^/]+\/[0-9a-f][0-9a-f-]{7,}/,
   /myworkdayjobs\.com\/.+\/job\//,
   /jobs\.smartrecruiters\.com\/[^/]+\/\d+/,
+  /\/job(s)?\/[^/?#]+/,
+  /\/careers?\/[^/?#]+/,
 ];
 
 const AGGREGATOR_URL_PATTERNS = [
@@ -66,6 +68,10 @@ const AGGREGATOR_URL_PATTERNS = [
   /greenhouse\.io\/[^/]+\/?(\?|$)/,                                // company board root
   /jobs\.lever\.co\/[^/]+\/?(\?|$)/,                               // company board root
   /\/jobs\/search(\/|\?|$)/,
+  /\/go\/view-all-opportunities\//,
+  /\/view-all-opportunities(\/|\?|$)/,
+  /\/all-?opportunities(\/|\?|$)/,
+  /\/search-?careers?(\/|\?|$)/,
   /\/(search|browse|find)-?jobs?(\/|\?|$)/,
 ];
 
@@ -74,6 +80,8 @@ const AGGREGATOR_TITLE_PATTERNS = [
   /\bjobs\s+(in|near)\s+/i,                                          // "Analyst Jobs in Berlin"
   /\bjobs?,\s*(employment|vacancies|careers)\b/i,                    // "… Jobs, Employment | Indeed"
   /^\s*(top|best|latest|newest|browse|search|find)\b.*\b(jobs|openings|vacancies)\b/i,
+  /^\s*view\s+all\s+(opportunities|jobs|openings)\s*$/i,
+  /^\s*search\s+(careers|jobs|opportunities)\s*$/i,
 ];
 
 function isAggregatorPage(url: string, title: string): boolean {
