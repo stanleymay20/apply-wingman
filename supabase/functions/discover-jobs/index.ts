@@ -145,15 +145,33 @@ function prettifySlug(slug: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// True when the candidate company string is really just a search keyword.
+// Role tokens that appear in job titles but virtually never in a real employer
+// name. If a "company" contains one of these, it's almost certainly a job-title
+// fragment that leaked into the company field.
+const JOB_TITLE_TOKENS =
+  /\b(engineer|scientist|analyst|developer|programmer|architect|intern|internship|recruiter|manager)\b/i;
+
+// True when the candidate company string is really a search keyword or a job
+// title fragment rather than an employer name.
 function isKeywordLike(company: string, keywords: string[]): boolean {
   const c = company.trim().toLowerCase();
   if (!c) return false;
-  return keywords.some((k) => k.trim().toLowerCase() === c);
+  // Exact keyword match, or the keyword appears as a substring (e.g.
+  // "Senior Data Engineer, Risk" contains the keyword "data engineer").
+  if (
+    keywords.some((k) => {
+      const kk = k.trim().toLowerCase();
+      return kk.length > 2 && (c === kk || c.includes(kk));
+    })
+  ) {
+    return true;
+  }
+  // Generic job-title shapes (covers roles outside the current keyword set).
+  return JOB_TITLE_TOKENS.test(c);
 }
 
-// Resolve a trustworthy company name. Rejects blanks, placeholders and search
-// keywords, deriving from the board slug when available.
+// Resolve a trustworthy company name. Rejects blanks, placeholders and job
+// titles / search keywords, deriving from the board slug when available.
 function sanitizeCompany(company: string, url: string, keywords: string[]): string {
   const clean = (company ?? "").trim();
   const bad =
@@ -166,6 +184,7 @@ function sanitizeCompany(company: string, url: string, keywords: string[]): stri
   if (slug) return prettifySlug(slug);
   return "Unknown Company";
 }
+
 
 
 function matchesAnyKeyword(title: string, description: string, keywords: string[]): boolean {
