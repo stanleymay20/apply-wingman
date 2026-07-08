@@ -750,7 +750,9 @@ serve(async (req) => {
     }
 
     // Record Firecrawl's outcome — a failure here no longer aborts the run.
-    if (firecrawlKey) {
+    if (firecrawlKey && !shouldRunFirecrawl) {
+      sourceReport.firecrawl = "skipped: no selected Firecrawl-backed platforms";
+    } else if (firecrawlKey) {
       if (searchAttempts > 0 && searchErrors.length === searchAttempts) {
         sourceReport.firecrawl = searchErrors.some((e) => e.status === 402)
           ? "quota_exceeded"
