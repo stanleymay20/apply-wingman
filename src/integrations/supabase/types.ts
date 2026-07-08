@@ -734,6 +734,7 @@ export type Database = {
           salary_min: number | null
           source_key: string | null
           source_platform: string
+          source_type: string
           source_url: string
           status: string | null
           title: string
@@ -765,6 +766,7 @@ export type Database = {
           salary_min?: number | null
           source_key?: string | null
           source_platform: string
+          source_type?: string
           source_url: string
           status?: string | null
           title: string
@@ -796,6 +798,7 @@ export type Database = {
           salary_min?: number | null
           source_key?: string | null
           source_platform?: string
+          source_type?: string
           source_url?: string
           status?: string | null
           title?: string
