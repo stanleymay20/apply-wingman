@@ -34,6 +34,7 @@ import {
 import { useAutoApply } from "@/hooks/useAutoApply";
 import { useAuth } from "@/hooks/useAuth";
 import { useCVProfile } from "@/hooks/useCVProfile";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { detectApplicationMethod, getAvailableMethods } from "@/lib/applicationMethods";
 import { cn } from "@/lib/utils";
