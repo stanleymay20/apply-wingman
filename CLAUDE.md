@@ -14,9 +14,11 @@ production when one of these happens:
 
 1. **Through Lovable** — prompt the Lovable agent, e.g.
    "Redeploy all edge functions and apply pending database migrations."
-2. **Via the `Deploy Supabase backend` GitHub Action** — it only activates if
-   the `SUPABASE_ACCESS_TOKEN` / `SUPABASE_DB_PASSWORD` repo secrets are set
-   (Lovable Cloud may not expose these; without them it skips with a notice).
+2. **Via the `Deploy Supabase backend` GitHub Action** — a `SUPABASE_DB_URL`
+   repo secret (Postgres connection string, port 5432) is enough to
+   auto-apply migrations on merge; `SUPABASE_ACCESS_TOKEN` additionally
+   enables edge-function deploys. Without secrets it skips with a notice
+   (Lovable Cloud may not expose these credentials).
 
 Skipping this step causes silent staleness. On 2026-07-08 the deployed
 `discover-jobs` turned out to be running code from before three merged PRs,
