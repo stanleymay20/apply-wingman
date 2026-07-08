@@ -166,13 +166,14 @@ serve(async (req) => {
                   source_platform: job.source_platform, source_url: job.source_url,
                   description: job.description || null, requirements: job.requirements || [],
                   is_remote: job.is_remote ?? false, job_type: job.job_type || null,
+                  source_type: job.source_type || "direct_employer",
                   user_id: user.id, status: "discovered",
                 }));
 
                 const { data: insertedJobs, error: insertError } = await supabase
                   .from("jobs")
                   .upsert(jobsToInsert, { onConflict: "user_id,source_key", ignoreDuplicates: true })
-                  .select("id, title, company, source_url, source_platform, description, requirements, location");
+                  .select("id, title, company, source_url, source_platform, description, requirements, location, source_type");
 
                 if (insertError) {
                   userResult.errors.push(`Insert failed: ${insertError.message}`);
