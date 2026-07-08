@@ -152,10 +152,13 @@ serve(async (req) => {
             });
 
             if (jobs.length > 0) {
-              const { data: existingJobs } = await supabase
-                .from("jobs").select("source_url").eq("user_id", user.id);
-              const existingUrls = new Set((existingJobs || []).map((j: any) => j.source_url?.toLowerCase()));
-              const newJobs = jobs.filter((job: any) => !existingUrls.has(job.source_url?.toLowerCase()));
+              const seenUrls = new Set<string>();
+              const newJobs = jobs.filter((job: any) => {
+                const normalizedUrl = String(job.source_url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+                if (!normalizedUrl || seenUrls.has(normalizedUrl)) return false;
+                seenUrls.add(normalizedUrl);
+                return true;
+              });
 
               if (newJobs.length > 0) {
                 const jobsToInsert = newJobs.map((job: any) => ({
@@ -167,7 +170,8 @@ serve(async (req) => {
                 }));
 
                 const { data: insertedJobs, error: insertError } = await supabase
-                  .from("jobs").insert(jobsToInsert)
+                  .from("jobs")
+                  .upsert(jobsToInsert, { onConflict: "user_id,source_key", ignoreDuplicates: true })
                   .select("id, title, company, source_url, source_platform, description, requirements, location");
 
                 if (insertError) {
