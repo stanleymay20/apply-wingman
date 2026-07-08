@@ -26,6 +26,8 @@ interface JobDiscoveryDialogProps {
 const PLATFORMS = [
   { id: "linkedin", label: "LinkedIn", icon: "🔗" },
   { id: "indeed", label: "Indeed", icon: "📋" },
+  { id: "remoteok", label: "RemoteOK", icon: "🌍" },
+  { id: "arbeitnow", label: "ArbeitNow", icon: "🇪🇺" },
   { id: "greenhouse", label: "Greenhouse", icon: "🌱" },
   { id: "lever", label: "Lever", icon: "🎯" },
   { id: "workday", label: "Workday", icon: "📊" },
@@ -38,7 +40,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   const { discoverJobs, isDiscovering } = useJobDiscovery();
   const { createSearch, isCreating } = useSavedSearches();
   
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "indeed"]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "indeed", "remoteok", "arbeitnow"]);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [newKeyword, setNewKeyword] = useState("");
