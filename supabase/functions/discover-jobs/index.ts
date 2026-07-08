@@ -26,6 +26,23 @@ interface DiscoveredJob {
   job_type: string;
 }
 
+const FIRECRAWL_SEARCH_TIMEOUT_MS = 18_000;
+const AI_ENHANCEMENT_TIMEOUT_MS = 12_000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 // Aggregator/search-result pages list many jobs but can't be applied to, so
 // they must never enter the pipeline as if they were individual postings.
 // URL shapes of individual postings are allowed through first; everything
@@ -543,9 +560,12 @@ serve(async (req) => {
 
       searchAttempts++;
       try {
-        const doFirecrawlFetch = () =>
-          fetch("https://api.firecrawl.dev/v1/search", {
+        const doFirecrawlFetch = () => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), FIRECRAWL_SEARCH_TIMEOUT_MS);
+          return fetch("https://api.firecrawl.dev/v1/search", {
             method: "POST",
+            signal: controller.signal,
             headers: {
               "Authorization": `Bearer ${firecrawlKeys[firecrawlKeyIdx]}`,
               "Content-Type": "application/json",
@@ -559,7 +579,8 @@ serve(async (req) => {
                 formats: ["markdown"],
               },
             }),
-          });
+          }).finally(() => clearTimeout(timer));
+        };
 
         let searchResponse = await doFirecrawlFetch();
 
@@ -761,21 +782,25 @@ serve(async (req) => {
     if (allJobs.length > 0) {
       try {
         const topJobs = allJobs.slice(0, 5);
-        const enhanced = await callAIJson<Array<{ title?: string; company?: string; requirements?: string[] }>>({
-          messages: [
-            {
-              role: "system",
-              content: "You extract structured job information from job listing descriptions. Return a JSON array only, no markdown.",
-            },
-            {
-              role: "user",
-              content: `Extract requirements from these job descriptions. Return JSON array with objects having: title, company, requirements (array of 3-5 key requirements as strings).
+        const enhanced = await withTimeout(
+          callAIJson<Array<{ title?: string; company?: string; requirements?: string[] }>>({
+            messages: [
+              {
+                role: "system",
+                content: "You extract structured job information from job listing descriptions. Return a JSON array only, no markdown.",
+              },
+              {
+                role: "user",
+                content: `Extract requirements from these job descriptions. Return JSON array with objects having: title, company, requirements (array of 3-5 key requirements as strings).
 
 ${JSON.stringify(topJobs.map((j) => ({ title: j.title, company: j.company, description: j.description.slice(0, 500) })), null, 2)}`,
-            },
-          ],
-          temperature: 0.1,
-        });
+              },
+            ],
+            temperature: 0.1,
+          }),
+          AI_ENHANCEMENT_TIMEOUT_MS,
+          "AI enhancement",
+        );
         for (let i = 0; i < Math.min(enhanced.length, topJobs.length); i++) {
           if (enhanced[i]?.requirements && Array.isArray(enhanced[i].requirements)) {
             allJobs[i].requirements = enhanced[i].requirements;

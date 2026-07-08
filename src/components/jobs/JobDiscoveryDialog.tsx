@@ -46,6 +46,23 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   const [searchName, setSearchName] = useState("");
   const [initialized, setInitialized] = useState(false);
 
+  const pendingKeyword = newKeyword.trim();
+  const pendingLocation = newLocation.trim();
+
+  const getEffectiveKeywords = () => {
+    if (pendingKeyword && !keywords.includes(pendingKeyword)) {
+      return [...keywords, pendingKeyword];
+    }
+    return keywords;
+  };
+
+  const getEffectiveLocations = () => {
+    if (pendingLocation && !locations.includes(pendingLocation)) {
+      return [...locations, pendingLocation];
+    }
+    return locations;
+  };
+
   // Reset state when dialog opens - start fresh, don't auto-populate from profile
   useEffect(() => {
     if (open && !initialized) {
@@ -72,8 +89,8 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   };
 
   const addKeyword = () => {
-    if (newKeyword.trim() && !keywords.includes(newKeyword.trim())) {
-      setKeywords([...keywords, newKeyword.trim()]);
+    if (pendingKeyword && !keywords.includes(pendingKeyword)) {
+      setKeywords([...keywords, pendingKeyword]);
       setNewKeyword("");
     }
   };
@@ -83,8 +100,8 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   };
 
   const addLocation = () => {
-    if (newLocation.trim() && !locations.includes(newLocation.trim())) {
-      setLocations([...locations, newLocation.trim()]);
+    if (pendingLocation && !locations.includes(pendingLocation)) {
+      setLocations([...locations, pendingLocation]);
       setNewLocation("");
     }
   };
@@ -94,7 +111,10 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   };
 
   const handleDiscover = () => {
-    if (keywords.length === 0) {
+    const effectiveKeywords = getEffectiveKeywords();
+    const effectiveLocations = getEffectiveLocations();
+
+    if (effectiveKeywords.length === 0) {
       toast.error("Add at least one keyword to search for jobs");
       return;
     }
@@ -104,12 +124,12 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
       return;
     }
     
-    console.log("Starting discovery with:", { keywords, locations, platforms: selectedPlatforms });
+    console.log("Starting discovery with:", { keywords: effectiveKeywords, locations: effectiveLocations, platforms: selectedPlatforms });
     
     discoverJobs(
       {
-        keywords,
-        locations: locations.length > 0 ? locations : ["Remote"],
+        keywords: effectiveKeywords,
+        locations: effectiveLocations.length > 0 ? effectiveLocations : ["Remote"],
         platforms: selectedPlatforms,
       },
       {
@@ -126,19 +146,28 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
   };
 
   const handleSaveSearch = () => {
-    if (keywords.length === 0) {
+    const effectiveKeywords = getEffectiveKeywords();
+    const effectiveLocations = getEffectiveLocations();
+
+    if (effectiveKeywords.length === 0) {
       toast.error("Add at least one keyword to save");
       return;
     }
-    const name = searchName.trim() || keywords.slice(0, 2).join(", ");
+    const name = searchName.trim() || effectiveKeywords.slice(0, 2).join(", ");
     createSearch({
       name,
-      keywords,
-      locations,
+      keywords: effectiveKeywords,
+      locations: effectiveLocations,
       platforms: selectedPlatforms,
     });
+    setKeywords(effectiveKeywords);
+    setLocations(effectiveLocations);
+    setNewKeyword("");
+    setNewLocation("");
     setSearchName("");
   };
+
+  const canSubmit = (keywords.length > 0 || pendingKeyword.length > 0) && selectedPlatforms.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,7 +191,12 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
                 placeholder="e.g. Teacher, Nurse, Accountant"
                 value={newKeyword}
                 onChange={(e) => setNewKeyword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addKeyword()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addKeyword();
+                  }
+                }}
                 className="bg-secondary border-border"
               />
               <Button variant="outline" size="icon" onClick={addKeyword}>
@@ -191,7 +225,12 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
                 placeholder="e.g. Berlin, Remote"
                 value={newLocation}
                 onChange={(e) => setNewLocation(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addLocation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addLocation();
+                  }
+                }}
                 className="bg-secondary border-border"
               />
               <Button variant="outline" size="icon" onClick={addLocation}>
@@ -228,6 +267,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
                   <Checkbox
                     id={platform.id}
                     checked={selectedPlatforms.includes(platform.id)}
+                    onClick={(event) => event.stopPropagation()}
                     onCheckedChange={() => togglePlatform(platform.id)}
                   />
                   <div className="flex items-center gap-2">
@@ -254,7 +294,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
               <Button
                 variant="outline"
                 onClick={handleSaveSearch}
-                disabled={keywords.length === 0 || isCreating}
+                disabled={(keywords.length === 0 && pendingKeyword.length === 0) || isCreating}
               >
                 <Bookmark className="w-4 h-4 mr-2" />
                 Save
@@ -269,7 +309,7 @@ export function JobDiscoveryDialog({ open, onOpenChange }: JobDiscoveryDialogPro
           </Button>
           <Button
             onClick={handleDiscover}
-            disabled={keywords.length === 0 || selectedPlatforms.length === 0 || isDiscovering}
+            disabled={!canSubmit || isDiscovering}
           >
             {isDiscovering ? (
               <>
