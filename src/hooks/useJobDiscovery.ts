@@ -184,16 +184,18 @@ export function useJobDiscovery() {
       return { jobId, score: 0, error: "No match score returned" };
     };
 
-    for (let i = 0; i < jobIdsToMatch.length; i += MATCH_BATCH_SIZE) {
-      const batch = jobIdsToMatch.slice(i, i + MATCH_BATCH_SIZE);
-      matchResults.push(...await Promise.all(batch.map(matchOneJob)));
+    try {
+      for (let i = 0; i < jobIdsToMatch.length; i += MATCH_BATCH_SIZE) {
+        const batch = jobIdsToMatch.slice(i, i + MATCH_BATCH_SIZE);
+        matchResults.push(...await Promise.all(batch.map(matchOneJob)));
 
-      if (i + MATCH_BATCH_SIZE < jobIdsToMatch.length) {
-        await new Promise(r => setTimeout(r, 500));
+        if (i + MATCH_BATCH_SIZE < jobIdsToMatch.length) {
+          await new Promise(r => setTimeout(r, 500));
+        }
       }
+    } finally {
+      setIsMatching(false);
     }
-    
-    setIsMatching(false);
     
     const successCount = matchResults.filter(r => !r.error).length;
     const highMatches = matchResults.filter(r => r.score >= 80).length;
