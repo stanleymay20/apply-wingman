@@ -109,6 +109,84 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+// Company-name safety. The Lever/Greenhouse/Workday ingestion paths used to
+// fall back to the *search keyword* whenever they couldn't parse a real
+// employer name, corrupting `company` (e.g. company = "Data Engineer"). The
+// board slug embedded in the source URL is the real company identifier, so we
+// derive from that and never let a search keyword survive as a company name.
+
+// Extract the company/board slug from a known ATS source URL.
+function slugFromUrl(url: string): string | null {
+  const patterns: RegExp[] = [
+    /jobs\.lever\.co\/([A-Za-z0-9._-]+)/i,
+    /greenhouse\.io\/([A-Za-z0-9._-]+)\/jobs\//i,
+    /jobs\.smartrecruiters\.com\/([A-Za-z0-9._-]+)/i,
+    // Workday tenants: "velera.wd5.myworkdayjobs.com" -> "velera"
+    /\/\/([A-Za-z0-9_-]+)\.[A-Za-z0-9_.-]*myworkdayjobs\.com/i,
+  ];
+  for (const re of patterns) {
+    const m = url.match(re);
+    if (m?.[1]) {
+      const slug = m[1].toLowerCase();
+      if (!["v0", "v1", "api", "boards", "embed", "www", "en-us"].includes(slug)) {
+        return m[1];
+      }
+    }
+  }
+  return null;
+}
+
+// Turn a board slug like "acme-corp" or "acme_labs" into "Acme Corp".
+function prettifySlug(slug: string): string {
+  return slug
+    .replace(/[-_.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Role tokens that appear in job titles but virtually never in a real employer
+// name. If a "company" contains one of these, it's almost certainly a job-title
+// fragment that leaked into the company field.
+const JOB_TITLE_TOKENS =
+  /\b(engineer|scientist|analyst|developer|programmer|architect|intern|internship|recruiter|manager)\b/i;
+
+// True when the candidate company string is really a search keyword or a job
+// title fragment rather than an employer name.
+function isKeywordLike(company: string, keywords: string[]): boolean {
+  const c = company.trim().toLowerCase();
+  if (!c) return false;
+  // Exact keyword match, or the keyword appears as a substring (e.g.
+  // "Senior Data Engineer, Risk" contains the keyword "data engineer").
+  if (
+    keywords.some((k) => {
+      const kk = k.trim().toLowerCase();
+      return kk.length > 2 && (c === kk || c.includes(kk));
+    })
+  ) {
+    return true;
+  }
+  // Generic job-title shapes (covers roles outside the current keyword set).
+  return JOB_TITLE_TOKENS.test(c);
+}
+
+// Resolve a trustworthy company name. Rejects blanks, placeholders and job
+// titles / search keywords, deriving from the board slug when available.
+function sanitizeCompany(company: string, url: string, keywords: string[]): string {
+  const clean = (company ?? "").trim();
+  const bad =
+    !clean ||
+    clean.length < 2 ||
+    clean.toLowerCase() === "unknown company" ||
+    isKeywordLike(clean, keywords);
+  if (!bad) return clean;
+  const slug = slugFromUrl(url);
+  if (slug) return prettifySlug(slug);
+  return "Unknown Company";
+}
+
+
+
 function matchesAnyKeyword(title: string, description: string, keywords: string[]): boolean {
   const titleLower = title.toLowerCase();
   const descLower = description.toLowerCase().slice(0, 2000);
@@ -194,6 +272,7 @@ async function collectBoardSlugs(
   urlLikeFilter: string,
   slugPattern: RegExp,
   reservedSlugs: Set<string>,
+  keywords: string[],
 ): Promise<Map<string, string>> {
   const { data: rows } = await supabaseService
     .from("jobs")
@@ -205,12 +284,21 @@ async function collectBoardSlugs(
   for (const row of rows ?? []) {
     const m = String(row.source_url ?? "").match(slugPattern);
     if (m?.[1] && !reservedSlugs.has(m[1].toLowerCase())) {
-      const company = row.company && row.company !== "Unknown Company" ? row.company : m[1];
+      // The slug is the authoritative company identifier. Only trust the
+      // stored company name when it is not a placeholder and not a search
+      // keyword (those are the corrupted values we must never propagate).
+      const stored = String(row.company ?? "").trim();
+      const usable =
+        stored &&
+        stored.toLowerCase() !== "unknown company" &&
+        !isKeywordLike(stored, keywords);
+      const company = usable ? stored : prettifySlug(m[1]);
       if (!slugs.has(m[1])) slugs.set(m[1], company);
     }
   }
   return slugs;
 }
+
 
 const MAX_BOARDS_PER_SOURCE = 5;
 
@@ -233,13 +321,14 @@ async function refreshBoards(
 }
 
 // deno-lint-ignore no-explicit-any
-async function refreshGreenhouseBoards(supabaseService: any, userId: string): Promise<DiscoveredJob[]> {
+async function refreshGreenhouseBoards(supabaseService: any, userId: string, keywords: string[]): Promise<DiscoveredJob[]> {
   const slugs = await collectBoardSlugs(
     supabaseService,
     userId,
     "%greenhouse.io%",
     /greenhouse\.io\/([A-Za-z0-9_-]+)\/jobs\//i,
     new Set(["v1", "boards", "embed", "api"]),
+    keywords,
   );
   return refreshBoards(slugs, async (token, company) => {
     const data = (await fetchJsonWithTimeout(
@@ -265,13 +354,14 @@ async function refreshGreenhouseBoards(supabaseService: any, userId: string): Pr
 }
 
 // deno-lint-ignore no-explicit-any
-async function refreshLeverBoards(supabaseService: any, userId: string): Promise<DiscoveredJob[]> {
+async function refreshLeverBoards(supabaseService: any, userId: string, keywords: string[]): Promise<DiscoveredJob[]> {
   const slugs = await collectBoardSlugs(
     supabaseService,
     userId,
     "%jobs.lever.co%",
     /jobs\.lever\.co\/([A-Za-z0-9._-]+)/i,
     new Set(["v0", "api"]),
+    keywords,
   );
   return refreshBoards(slugs, async (slug, company) => {
     const data = await fetchJsonWithTimeout(`https://api.lever.co/v0/postings/${slug}?mode=json`);
@@ -295,13 +385,14 @@ async function refreshLeverBoards(supabaseService: any, userId: string): Promise
 }
 
 // deno-lint-ignore no-explicit-any
-async function refreshSmartRecruitersBoards(supabaseService: any, userId: string): Promise<DiscoveredJob[]> {
+async function refreshSmartRecruitersBoards(supabaseService: any, userId: string, keywords: string[]): Promise<DiscoveredJob[]> {
   const slugs = await collectBoardSlugs(
     supabaseService,
     userId,
     "%jobs.smartrecruiters.com%",
     /jobs\.smartrecruiters\.com\/([A-Za-z0-9._-]+)/i,
     new Set(["api"]),
+    keywords,
   );
   return refreshBoards(slugs, async (slug, company) => {
     const data = (await fetchJsonWithTimeout(
@@ -487,6 +578,8 @@ serve(async (req) => {
         return false;
       }
       if (!matchesAnyKeyword(job.title, job.description, keywords)) return false;
+      // Final guard: never persist a search keyword (or a blank) as the company.
+      job.company = sanitizeCompany(job.company, job.source_url, keywords);
       allJobs.push(job);
       return true;
     };
@@ -512,13 +605,13 @@ serve(async (req) => {
       freeSourceTasks.push(runSource("remoteok", fetchRemoteOkJobs));
     }
     if (platforms.length === 0 || platforms.includes("greenhouse")) {
-      freeSourceTasks.push(runSource("greenhouse_refresh", () => refreshGreenhouseBoards(supabaseService, userId)));
+      freeSourceTasks.push(runSource("greenhouse_refresh", () => refreshGreenhouseBoards(supabaseService, userId, keywords)));
     }
     if (platforms.length === 0 || platforms.includes("lever")) {
-      freeSourceTasks.push(runSource("lever_refresh", () => refreshLeverBoards(supabaseService, userId)));
+      freeSourceTasks.push(runSource("lever_refresh", () => refreshLeverBoards(supabaseService, userId, keywords)));
     }
     if (platforms.length === 0 || platforms.includes("smartrecruiters")) {
-      freeSourceTasks.push(runSource("smartrecruiters_refresh", () => refreshSmartRecruitersBoards(supabaseService, userId)));
+      freeSourceTasks.push(runSource("smartrecruiters_refresh", () => refreshSmartRecruitersBoards(supabaseService, userId, keywords)));
     }
 
     // Build search queries for each platform
@@ -726,9 +819,19 @@ serve(async (req) => {
             jobType = "contract";
           }
 
+          // For known ATS platforms the board slug in the URL is the
+          // authoritative employer identity, so prefer it over the noisy
+          // title/markdown parsing. Otherwise sanitize the parsed name.
+          const atsSlug = ["lever", "greenhouse", "workday", "smartrecruiters"].includes(detectedPlatform)
+            ? slugFromUrl(result.url)
+            : null;
+          const resolvedCompany = atsSlug
+            ? prettifySlug(atsSlug)
+            : sanitizeCompany(company, result.url, keywords);
+
           allJobs.push({
             title: jobTitle,
-            company,
+            company: resolvedCompany,
             location: jobLocation,
             source_platform: detectedPlatform,
             source_url: result.url,
@@ -739,6 +842,7 @@ serve(async (req) => {
           });
           firecrawlJobCount++;
         }
+
       } catch (searchError) {
         const errMsg = searchError instanceof DOMException && searchError.name === "AbortError"
           ? `Firecrawl search timed out after ${Math.round(FIRECRAWL_SEARCH_TIMEOUT_MS / 1000)}s`
