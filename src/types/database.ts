@@ -9,6 +9,7 @@ export type JobStatus =
   | "offer" 
   | "withdrawn" 
   | "expired" 
+  | "posting_expired"
   | "blacklisted";
 
 export type ApplicationStatus =

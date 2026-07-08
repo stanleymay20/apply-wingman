@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 const isAgencyJob = (job: { source_type?: string | null }) =>
   job.source_type === "agency_or_aggregator";
 
-type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired";
+type JobStatus = "discovered" | "matched" | "applied" | "rejected" | "expired" | "posting_expired";
 
 const STATUS_OPTIONS: { value: JobStatus | "all"; label: string }[] = [
   { value: "all", label: "All Statuses" },
@@ -66,7 +66,7 @@ const STATUS_OPTIONS: { value: JobStatus | "all"; label: string }[] = [
   { value: "matched", label: "Matched" },
   { value: "applied", label: "Applied" },
   { value: "rejected", label: "Rejected" },
-  { value: "expired", label: "Expired" },
+  { value: "posting_expired", label: "Expired / Dead" },
 ];
 
 const PLATFORM_OPTIONS = [
@@ -114,6 +114,20 @@ export default function Jobs() {
     [jobs, includeAgency]
   );
 
+  // Dead/removed postings (marked posting_expired by the liveness check) must
+  // never surface as matchable or applyable. They stay visible in the table via
+  // the "Expired / Dead" status filter, but are excluded from Match All, Good
+  // Fit counts and Bulk Apply.
+  const livePipelineJobs = useMemo(
+    () => pipelineJobs.filter((j) => j.status !== "posting_expired"),
+    [pipelineJobs]
+  );
+
+  const expiredCount = useMemo(
+    () => pipelineJobs.filter((j) => j.status === "posting_expired").length,
+    [pipelineJobs]
+  );
+
   const filteredJobs = useMemo(() => {
     return pipelineJobs.filter((job) => {
       const matchesSearch =
@@ -126,13 +140,17 @@ export default function Jobs() {
       const matchesPlatform =
         platformFilter === "all" || job.source_platform === platformFilter;
 
-      return matchesSearch && matchesStatus && matchesPlatform;
+      // Hide expired postings from the default view; only show them when the
+      // user explicitly filters to "Expired / Dead".
+      const hideExpired = statusFilter !== "posting_expired" && job.status === "posting_expired";
+
+      return matchesSearch && matchesStatus && matchesPlatform && !hideExpired;
     });
   }, [pipelineJobs, searchQuery, statusFilter, platformFilter]);
 
   const matchedJobs = useMemo(() => {
-    return pipelineJobs.filter((j) => j.match_score);
-  }, [pipelineJobs]);
+    return livePipelineJobs.filter((j) => j.match_score);
+  }, [livePipelineJobs]);
 
   const handleMatchJob = (jobId: string) => {
     if (!cvProfile) {
@@ -155,7 +173,7 @@ export default function Jobs() {
     }
     if (batchMatching) return;
 
-    const unmatchedJobs = pipelineJobs.filter((job) => !job.match_score);
+    const unmatchedJobs = livePipelineJobs.filter((job) => !job.match_score);
     if (unmatchedJobs.length === 0) {
       toast.info("All jobs are already matched");
       return;
@@ -242,10 +260,12 @@ export default function Jobs() {
       applied: "bg-success/10 text-success border-success/20",
       rejected: "bg-destructive/10 text-destructive border-destructive/20",
       expired: "bg-muted text-muted-foreground border-border",
+      posting_expired: "bg-destructive/10 text-destructive border-destructive/20",
     };
+    const label = status === "posting_expired" ? "Expired" : status;
     return (
       <Badge variant="outline" className={cn("capitalize", styles[status])}>
-        {status}
+        {label}
       </Badge>
     );
   };
@@ -334,7 +354,7 @@ export default function Jobs() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {pipelineJobs.filter((j) => (j.match_score || 0) >= 70).length}
+                      {livePipelineJobs.filter((j) => (j.match_score || 0) >= 70).length}
                     </p>
                     <p className="text-sm text-muted-foreground">Good Fit (70%+)</p>
                   </div>
@@ -349,7 +369,7 @@ export default function Jobs() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {pipelineJobs.filter((j) => !j.match_score).length}
+                      {livePipelineJobs.filter((j) => !j.match_score).length}
                     </p>
                     <p className="text-sm text-muted-foreground">Unmatched</p>
                   </div>

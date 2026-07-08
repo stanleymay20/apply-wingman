@@ -1,4 +1,11 @@
 import { callAI, callAIJson, AIRateLimitError, AICreditsError, preflightAI, AIError } from "../_shared/aiClient.ts";
+import {
+  fetchPosting,
+  assessLiveness,
+  fetchWorkdayLocation,
+  extractJsonLdLocation,
+  assessLocationEligibility,
+} from "../_shared/postingCheck.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -77,6 +84,112 @@ serve(async (req) => {
     if (!job || !cvProfile) {
       return new Response(JSON.stringify({ error: "Job and CV profile data required" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ===== Liveness + ground-truth location gate =====
+    // Runs before spending AI credits. Catches (1) dead/removed postings that
+    // redirect to a generic board page, and (2) location mismatches where the
+    // stored label (often a stale "Remote") hides an onsite role in a country
+    // the candidate can't work in. Only applied when we have a real jobId.
+    let groundTruthLocation: string | null = null;
+    if (job.source_url) {
+      const fetched = await fetchPosting(job.source_url);
+      const liveness = assessLiveness(job.source_url, fetched);
+
+      if (!liveness.alive) {
+        if (jobId) {
+          await supabase
+            .from("jobs")
+            .update({
+              status: "posting_expired",
+              match_score: null,
+              liveness_checked_at: new Date().toISOString(),
+            })
+            .eq("id", jobId);
+        }
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              expired: true,
+              reason: liveness.reason,
+              score: 0,
+              recommendation: "skip",
+              summary: `Posting is no longer available (${liveness.reason}). Marked as expired and excluded from matching.`,
+            },
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Ground-truth location: Workday via its CXS JSON API, otherwise from any
+      // JSON-LD JobPosting markup in the fetched HTML.
+      if (/myworkdayjobs\.com/i.test(job.source_url)) {
+        groundTruthLocation = await fetchWorkdayLocation(job.source_url);
+      }
+      if (!groundTruthLocation) {
+        groundTruthLocation = extractJsonLdLocation(fetched.body);
+      }
+
+      if (jobId) {
+        const patch: Record<string, unknown> = { liveness_checked_at: new Date().toISOString() };
+        if (groundTruthLocation && groundTruthLocation !== job.location) {
+          patch.location = groundTruthLocation;
+          // Correct a stale "Remote" flag when ground truth names a real onsite city.
+          if (!/remote/i.test(groundTruthLocation)) patch.is_remote = false;
+        }
+        await supabase.from("jobs").update(patch).eq("id", jobId);
+        if (groundTruthLocation) {
+          job.location = groundTruthLocation;
+          if (!/remote/i.test(groundTruthLocation)) job.is_remote = false;
+        }
+      }
+    }
+
+    // Deterministic location-eligibility gate — enforced server-side regardless
+    // of what the AI would say, using the ground-truth location above.
+    const effectiveLocation = groundTruthLocation || job.location;
+    const eligibility = assessLocationEligibility(
+      effectiveLocation,
+      Boolean(job.is_remote),
+      Boolean(job.visa_sponsorship),
+      {
+        work_authorized_countries: cvProfile.work_authorized_countries,
+        candidate_country: cvProfile.candidate_country,
+        needs_sponsorship: cvProfile.needs_sponsorship,
+      },
+    );
+
+    if (!eligibility.eligible) {
+      const skipResult = {
+        score: 12,
+        confidence: "high" as const,
+        location_eligible: false,
+        breakdown: {
+          skills_match: 0,
+          experience_match: 0,
+          seniority_match: 0,
+          location_match: 0,
+          language_match: 0,
+        },
+        matching_skills: [],
+        missing_skills: [],
+        strengths: [],
+        concerns: [
+          `Hard disqualifier: posting location "${effectiveLocation}" is in ${eligibility.detectedCountry ?? "a non-authorized region"} where the candidate is not authorized to work, and no visa sponsorship is offered.`,
+        ],
+        recommendation: "skip" as const,
+        summary: `Location disqualifier: role is based in ${eligibility.detectedCountry ?? "an ineligible location"}; candidate lacks work authorization there and no sponsorship is offered.`,
+      };
+      if (jobId) {
+        await supabase
+          .from("jobs")
+          .update({ match_score: skipResult.score, match_details: skipResult })
+          .eq("id", jobId);
+      }
+      return new Response(JSON.stringify({ success: true, data: skipResult }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
