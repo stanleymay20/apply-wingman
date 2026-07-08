@@ -1,9 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { JobDetailsPanel } from "@/components/jobs/JobDetailsPanel";
+import { AutoApplyButton } from "@/components/jobs/AutoApplyButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { useJobs } from "@/hooks/useJobs";
 import { useCVProfile } from "@/hooks/useCVProfile";
+import { useApplications } from "@/hooks/useApplications";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Briefcase, ExternalLink } from "lucide-react";
 
@@ -12,8 +14,10 @@ export default function JobDetails() {
   const navigate = useNavigate();
   const { jobs, isLoading, matchJob, isMatching } = useJobs();
   const { cvProfile } = useCVProfile();
+  const { applications } = useApplications();
 
   const job = jobs.find((j) => j.id === jobId);
+  const application = applications.find((app) => app.job_id === jobId);
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -51,12 +55,28 @@ export default function JobDetails() {
           Back to Jobs
         </Button>
 
-        <Button asChild>
-          <a href={job.source_url} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="w-4 h-4 mr-2" />
-            View Original Listing
-          </a>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <a href={job.source_url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="w-4 h-4 mr-2" />
+              View Original Listing
+            </a>
+          </Button>
+
+          <AutoApplyButton
+            job={{
+              id: job.id,
+              title: job.title,
+              company: job.company,
+              source_url: job.source_url,
+              source_platform: job.source_platform,
+              description: job.description,
+              application: application
+                ? { id: application.id, cover_letter: application.cover_letter || undefined }
+                : null,
+            }}
+          />
+        </div>
       </header>
 
       <section className="glass-card p-6">
