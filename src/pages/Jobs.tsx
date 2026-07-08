@@ -352,7 +352,7 @@ export default function Jobs() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {pipelineJobs.filter((j) => (j.match_score || 0) >= 70).length}
+                      {livePipelineJobs.filter((j) => (j.match_score || 0) >= 70).length}
                     </p>
                     <p className="text-sm text-muted-foreground">Good Fit (70%+)</p>
                   </div>
