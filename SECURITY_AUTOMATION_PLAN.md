@@ -1,1 +1,0 @@
-# Apply Wingman automation hardening
