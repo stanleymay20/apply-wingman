@@ -15,6 +15,8 @@ import {
   WORKER_VERSION,
 } from "../_shared/runLedger.ts";
 import { prepareApplicationMaterials } from "../_shared/materials.ts";
+import { enqueueBrowserApplication } from "../_shared/browserQueue.ts";
+import { resolveApplyRoute } from "../_shared/applyRouting.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,7 +41,7 @@ serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const summary = { picked: 0, dispatched: 0, skipped: 0, failed: 0, recoveredFromPreparing: 0 };
+  const summary = { picked: 0, dispatched: 0, queuedForBrowser: 0, skipped: 0, failed: 0, recoveredFromPreparing: 0 };
 
   try {
     // ── Pre-sweep: reset stale 'preparing' rows back to 'pending' ──────────
