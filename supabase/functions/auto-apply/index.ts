@@ -22,7 +22,7 @@ const REPLY_TO_EMAIL = Deno.env.get("REPLY_TO_EMAIL");
 
 
 // Application cap - raised for real usage
-const MAX_DAILY_APPLICATIONS = 200;
+const MAX_DAILY_APPLICATIONS = 50;
 
 interface ApplyRequest {
   applicationId: string;

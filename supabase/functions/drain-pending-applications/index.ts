@@ -22,6 +22,7 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 20;
+const DEFAULT_DAILY_CAP = 50;
 let running = false;
 
 serve(async (req) => {
@@ -115,7 +116,7 @@ serve(async (req) => {
           .eq("user_id", app.user_id)
           .gte("applied_at", `${today}T00:00:00`)
           .lte("applied_at", `${today}T23:59:59`);
-        if ((todayCount ?? 0) >= (profile.daily_application_cap || 200)) {
+        if ((todayCount ?? 0) >= (profile.daily_application_cap ?? DEFAULT_DAILY_CAP)) {
           summary.skipped++;
           continue;
         }

@@ -86,7 +86,7 @@ serve(async (req) => {
           .gte("applied_at", `${today}T00:00:00`)
           .lte("applied_at", `${today}T23:59:59`);
 
-        const dailyCap = user.daily_application_cap || 200;
+        const dailyCap = user.daily_application_cap ?? DEFAULT_DAILY_CAP;
         const remainingCap = dailyCap - (todayApps?.length || 0);
 
         if (remainingCap <= 0) {
@@ -285,15 +285,16 @@ serve(async (req) => {
                             idempotencyKey: `apply_started:${app.id}`,
                           });
 
-                          const { verified, message } = await triggerAutoApply(supabaseUrl, supabaseServiceKey, {
-                            userId: user.id, applicationId: app.id, jobId: job.id,
-                            jobTitle: job.title, company: job.company,
-                            sourceUrl: job.source_url, sourcePlatform: job.source_platform,
-                            userName: user.full_name || user.email, userEmail: user.email,
-                            cvFileUrl: materials.tailoredCvPdfUrl || cvProfile.cv_file_url || undefined,
-                            coverLetter: materials.coverLetter || undefined,
-                            runId: run.id, correlationId: run.correlationId,
-                          });
+                          const { verified, queued, message } = await dispatchApplication(
+                            supabase, supabaseUrl, supabaseServiceKey, {
+                              userId: user.id, applicationId: app.id, jobId: job.id,
+                              jobTitle: job.title, company: job.company,
+                              sourceUrl: job.source_url, sourcePlatform: job.source_platform,
+                              userName: user.full_name || user.email, userEmail: user.email,
+                              cvFileUrl: materials.tailoredCvPdfUrl || cvProfile.cv_file_url || undefined,
+                              coverLetter: materials.coverLetter || undefined,
+                              runId: run.id, correlationId: run.correlationId,
+                            });
 
                           if (verified) {
                             userResult.applicationsSubmitted++;
@@ -303,6 +304,14 @@ serve(async (req) => {
                               status: "completed", applicationId: app.id, jobId: job.id, startedAt: applyStarted,
                               payload: { message },
                               idempotencyKey: `apply_completed:${app.id}`,
+                            });
+                          } else if (queued) {
+                            // Handed to the external browser worker — NOT a success.
+                            await emitStep(supabase, {
+                              runId: run.id, userId: user.id, stepName: "apply_queued_browser",
+                              status: "completed", applicationId: app.id, jobId: job.id, startedAt: applyStarted,
+                              payload: { message },
+                              idempotencyKey: `apply_queued_browser:${app.id}`,
                             });
                           } else {
                             await incrementRunCounter(supabase, run.id, "applications_failed", 1);
@@ -317,9 +326,12 @@ serve(async (req) => {
                           await supabase.from("notifications").insert({
                             user_id: user.id, type: "high_match_job",
                             title: "🎯 High Match Job Found",
-                            message: `${job.title} at ${job.company} — ${score}% match${verified ? " (delivered)" : " (action may be required)"}`,
-                            data: { jobId: job.id, score, verified, runId: run.id },
+                            message: `${job.title} at ${job.company} — ${score}% match${
+                              verified ? " (delivered)" : queued ? " (queued for browser worker)" : " (action may be required)"
+                            }`,
+                            data: { jobId: job.id, score, verified, queued, runId: run.id },
                           });
+
                         }
                       }
                     } catch (matchError) {
@@ -404,11 +416,17 @@ serve(async (req) => {
 });
 
 /**
- * Triggers auto-apply. Only returns `verified: true` when the application reached
- * a verified delivered state (Resend accepted). manual_action_required / failed
- * → verified: false.
+ * Routes an application to the correct channel and dispatches it.
+ *
+ * Routing rules (truthful by construction):
+ *  - Known form-based ATS (Greenhouse, Lever, Workday, LinkedIn, ...) → browser
+ *    worker queue. Never reported as applied until the worker returns proof.
+ *  - Otherwise: only use email when a usable recruiter address has actually
+ *    been discovered and stored (extraction is attempted once per job).
+ *  - No usable email → browser worker queue (never a blind email send).
  */
-async function triggerAutoApply(
+async function dispatchApplication(
+  supabase: any,
   supabaseUrl: string,
   serviceKey: string,
   params: {
@@ -416,15 +434,65 @@ async function triggerAutoApply(
     sourceUrl: string; sourcePlatform: string; userName: string; userEmail: string;
     cvFileUrl?: string; coverLetter?: string; runId: string; correlationId: string;
   }
-): Promise<{ verified: boolean; message?: string }> {
+): Promise<{ verified: boolean; queued: boolean; message?: string }> {
   try {
-    const method = detectApplyMethod(params.sourceUrl);
+    const route = await resolveApplyRoute(supabase, supabaseUrl, serviceKey, {
+      jobId: params.jobId,
+      sourceUrl: params.sourceUrl,
+    });
+
+    if (route.mode === "browser") {
+      const { queued, error, atsType } = await enqueueBrowserApplication(supabase, {
+        userId: params.userId,
+        applicationId: params.applicationId,
+        jobId: params.jobId,
+        targetUrl: params.sourceUrl,
+        platform: params.sourcePlatform,
+        tailoredCvUrl: params.cvFileUrl ?? null,
+        coverLetter: params.coverLetter ?? null,
+        candidatePayload: {
+          fullName: params.userName,
+          email: params.userEmail,
+          jobTitle: params.jobTitle,
+          company: params.company,
+        },
+        runId: params.runId,
+        correlationId: params.correlationId,
+      });
+
+      if (!queued) {
+        return { verified: false, queued: false, message: `Browser queue insert failed: ${error}` };
+      }
+
+      await supabase
+        .from("applications")
+        .update({ status: "queued", application_method: "browser_worker", updated_at: new Date().toISOString() })
+        .eq("id", params.applicationId);
+
+      await supabase.from("application_logs").insert({
+        user_id: params.userId,
+        application_id: params.applicationId,
+        job_id: params.jobId,
+        action: "browser_worker_queued",
+        level: "info",
+        message: `Queued ${params.jobTitle} at ${params.company} for the browser worker (${atsType ?? "web form"}) — not submitted yet`,
+        details: { atsType, targetUrl: params.sourceUrl, runId: params.runId },
+      });
+
+      return { verified: false, queued: true, message: "Queued for browser worker" };
+    }
+
     const response = await fetch(`${supabaseUrl}/functions/v1/auto-apply`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceKey}`,
+        "X-Idempotency-Key": `scheduled:${params.applicationId}`,
+      },
       body: JSON.stringify({
         userId: params.userId, applicationId: params.applicationId, jobId: params.jobId,
-        method, userName: params.userName, userEmail: params.userEmail,
+        method: "email", recipientEmail: route.recipientEmail,
+        userName: params.userName, userEmail: params.userEmail,
         jobTitle: params.jobTitle, company: params.company,
         sourceUrl: params.sourceUrl, sourcePlatform: params.sourcePlatform,
         cvFileUrl: params.cvFileUrl,
@@ -433,22 +501,13 @@ async function triggerAutoApply(
       }),
     });
     if (!response.ok) {
-      return { verified: false, message: `auto-apply http ${response.status}` };
+      return { verified: false, queued: false, message: `auto-apply http ${response.status}` };
     }
     const result = await response.json();
     // Truthful: only treat as verified when auto-apply reports verified delivery.
     const verified = result?.success === true && result?.deliveryStatus === "delivered";
-    return { verified, message: result?.message };
+    return { verified, queued: false, message: result?.message };
   } catch (error) {
-    return { verified: false, message: String(error) };
+    return { verified: false, queued: false, message: String(error) };
   }
-}
-
-function detectApplyMethod(sourceUrl: string): "email" | "ats_api" | "assisted" {
-  const url = sourceUrl.toLowerCase();
-  if (url.includes("greenhouse.io") || url.includes("boards.greenhouse")) return "ats_api";
-  if (url.includes("lever.co")) return "ats_api";
-  if (url.includes("workday")) return "assisted";
-  if (url.includes("linkedin.com")) return "assisted";
-  return "email";
 }
