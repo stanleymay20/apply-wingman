@@ -9,6 +9,10 @@ import {
   WORKER_VERSION,
 } from "../_shared/runLedger.ts";
 import { prepareApplicationMaterials } from "../_shared/materials.ts";
+import { enqueueBrowserApplication } from "../_shared/browserQueue.ts";
+import { resolveApplyRoute } from "../_shared/applyRouting.ts";
+
+const DEFAULT_DAILY_CAP = 50;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
