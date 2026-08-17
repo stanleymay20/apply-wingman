@@ -34,20 +34,30 @@ create index if not exists browser_application_tasks_user_idx
 
 alter table public.browser_application_tasks enable row level security;
 
--- Users may inspect their own worker state from the app, but only the service
--- role is allowed to mutate queue rows.
+grant select on public.browser_application_tasks to authenticated;
+revoke insert, update, delete on public.browser_application_tasks from anon, authenticated;
+grant all on public.browser_application_tasks to service_role;
+
+-- Users may inspect only their own worker state from the app. Mutations remain
+-- service-role only.
 drop policy if exists "Users can view own browser application tasks" on public.browser_application_tasks;
 create policy "Users can view own browser application tasks"
   on public.browser_application_tasks
   for select
   to authenticated
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
-create or replace function public.enqueue_browser_application_task()
+-- Keep the privileged trigger function out of the exposed public schema. It is
+-- SECURITY DEFINER only so an application lifecycle transition cannot be made
+-- to fail merely because the caller lacks direct INSERT rights on the queue.
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
+create or replace function private.enqueue_browser_application_task()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   v_source_url text;
@@ -107,31 +117,82 @@ begin
                and public.browser_application_tasks.lease_expires_at > now() then 'leased'
           else 'pending'
         end,
+        worker_id = case
+          when public.browser_application_tasks.status = 'leased'
+               and public.browser_application_tasks.lease_expires_at > now()
+            then public.browser_application_tasks.worker_id
+          else null
+        end,
+        leased_at = case
+          when public.browser_application_tasks.status = 'leased'
+               and public.browser_application_tasks.lease_expires_at > now()
+            then public.browser_application_tasks.leased_at
+          else null
+        end,
+        lease_expires_at = case
+          when public.browser_application_tasks.status = 'leased'
+               and public.browser_application_tasks.lease_expires_at > now()
+            then public.browser_application_tasks.lease_expires_at
+          else null
+        end,
         updated_at = now();
 
   return new;
 end;
 $$;
 
-revoke all on function public.enqueue_browser_application_task() from public;
+revoke all on function private.enqueue_browser_application_task() from public, anon, authenticated;
 
 drop trigger if exists applications_enqueue_browser_worker on public.applications;
 create trigger applications_enqueue_browser_worker
 after insert or update of status, application_method
 on public.applications
 for each row
-execute function public.enqueue_browser_application_task();
+execute function private.enqueue_browser_application_task();
+
+-- Queue supported handoffs that already existed before this migration.
+insert into public.browser_application_tasks (
+  application_id,
+  user_id,
+  job_id,
+  adapter,
+  source_url,
+  source_platform,
+  status
+)
+select
+  a.id,
+  a.user_id,
+  a.job_id,
+  case
+    when lower(j.source_url) ~ '(greenhouse\.io|boards\.greenhouse)' then 'greenhouse'
+    else 'lever'
+  end,
+  j.source_url,
+  j.source_platform,
+  'pending'
+from public.applications a
+join public.jobs j on j.id = a.job_id
+where a.status = 'manual_action_required'
+  and coalesce(a.application_method, '') = 'form_submit'
+  and j.source_url is not null
+  and (
+    lower(j.source_url) ~ '(greenhouse\.io|boards\.greenhouse)'
+    or lower(j.source_url) ~ 'lever\.co/'
+  )
+on conflict (application_id) do nothing;
 
 -- Atomic lease acquisition. FOR UPDATE SKIP LOCKED prevents two scheduled
--- workers from claiming the same application.
+-- workers from claiming the same application. This function is SECURITY
+-- INVOKER and executable only by service_role.
 create or replace function public.claim_browser_application_task(
   p_worker_id text,
   p_lease_minutes integer default 10
 )
 returns setof public.browser_application_tasks
 language plpgsql
-security definer
-set search_path = public
+security invoker
+set search_path = public, pg_temp
 as $$
 declare
   v_id uuid;
