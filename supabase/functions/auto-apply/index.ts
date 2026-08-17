@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifyFromLifecycle } from "../_shared/notifications.ts";
 import { classifyError, computeNextRetryAt, loadRetryConfig } from "../_shared/retry.ts";
 import { prepareApplicationMaterials } from "../_shared/materials.ts";
+import { enqueueBrowserApplication } from "../_shared/browserQueue.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
