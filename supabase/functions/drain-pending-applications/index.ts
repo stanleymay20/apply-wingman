@@ -170,6 +170,67 @@ serve(async (req) => {
 
         const applyStarted = Date.now();
         try {
+          const route = await resolveApplyRoute(supabase, supabaseUrl, serviceKey, {
+            jobId: job.id,
+            sourceUrl: job.source_url,
+          });
+
+          // ── Form-based / no usable recruiter email → browser worker queue ──
+          if (route.mode === "browser") {
+            const { queued, error: qErr, atsType } = await enqueueBrowserApplication(supabase, {
+              userId: app.user_id,
+              applicationId: app.id,
+              jobId: job.id,
+              targetUrl: job.source_url,
+              platform: job.source_platform,
+              tailoredCvUrl: materials.tailoredCvPdfUrl || cv?.cv_file_url || null,
+              coverLetter: materials.coverLetter || null,
+              candidatePayload: {
+                fullName: profile.full_name || profile.email,
+                email: profile.email,
+                jobTitle: job.title,
+                company: job.company,
+              },
+              runId: run.id,
+              correlationId: run.correlationId,
+            });
+
+            if (queued) {
+              await supabase
+                .from("applications")
+                .update({
+                  status: "queued",
+                  application_method: "browser_worker",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", app.id);
+              summary.queuedForBrowser++;
+              await emitStep(supabase, {
+                runId: run.id, userId: app.user_id, stepName: "apply_queued_browser",
+                status: "completed", applicationId: app.id, jobId: job.id, startedAt: applyStarted,
+                payload: { atsType, reason: route.reason },
+                idempotencyKey: `drain_apply_queued_browser:${app.id}`,
+              });
+              await closeRun(supabase, {
+                runId: run.id, startedAt: run.startedAt, status: "completed",
+                errorSummary: null,
+              });
+            } else {
+              summary.failed++;
+              await emitStep(supabase, {
+                runId: run.id, userId: app.user_id, stepName: "apply_failed",
+                status: "failed", applicationId: app.id, jobId: job.id, startedAt: applyStarted,
+                error: qErr ?? "browser queue insert failed",
+                idempotencyKey: `drain_apply_failed:${app.id}`,
+              });
+              await closeRun(supabase, {
+                runId: run.id, startedAt: run.startedAt, status: "partial",
+                errorSummary: qErr ?? "browser queue insert failed",
+              });
+            }
+            continue;
+          }
+
           const res = await fetch(`${supabaseUrl}/functions/v1/auto-apply`, {
             method: "POST",
             headers: {
@@ -180,7 +241,8 @@ serve(async (req) => {
             body: JSON.stringify({
               applicationId: app.id,
               jobId: job.id,
-              method: "ats_api",
+              method: "email",
+              recipientEmail: route.recipientEmail,
               jobTitle: job.title,
               company: job.company,
               sourceUrl: job.source_url,
@@ -222,6 +284,7 @@ serve(async (req) => {
             status: verified ? "completed" : "partial",
             errorSummary: verified ? null : (body?.message ?? `http_${res.status}`),
           });
+
         } catch (e) {
           summary.failed++;
           await recordFailure(supabase, {
