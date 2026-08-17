@@ -7,6 +7,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { openRun, closeRun, emitStep, WORKER_VERSION } from "../_shared/runLedger.ts";
 import { prepareApplicationMaterials } from "../_shared/materials.ts";
+import { isUsableRecruiterEmail } from "../_shared/browserQueue.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,7 +100,7 @@ serve(async (req) => {
         summary.email_found++;
       }
 
-      if (!recruiterEmail) { summary.skipped++; continue; }
+      if (!isUsableRecruiterEmail(recruiterEmail)) { summary.skipped++; continue; }
 
       // Ensure a tailored CV + cover letter exist before emailing the recruiter.
       // Reuses stored materials when present; falls back to profile CV on failure.
