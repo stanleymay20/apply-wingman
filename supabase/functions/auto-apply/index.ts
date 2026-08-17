@@ -702,6 +702,30 @@ ${userName}`;
       throw new Error(`Unknown apply method: ${method}`);
     }
 
+    // Form-based paths are also handed to the external browser worker queue so
+    // an automated worker can finish them. This is idempotent (one row per
+    // application) and never changes the reported delivery status — only the
+    // worker's proof-carrying callback can mark an application delivered.
+    if (method !== "email") {
+      const { queued, atsType, error: queueError } = await enqueueBrowserApplication(supabase, {
+        userId,
+        applicationId,
+        jobId,
+        targetUrl: result.applicationUrl || sourceUrl,
+        platform: sourcePlatform,
+        tailoredCvUrl: effectiveCvFileUrl ?? null,
+        coverLetter: effectiveCoverLetter ?? null,
+        candidatePayload: { fullName: userName, email: userEmail, jobTitle, company },
+      });
+      if (!queued) {
+        console.warn("browser queue enqueue failed:", queueError);
+      } else {
+        result.message = `${result.message} Queued for the browser worker (${atsType ?? "web form"}).`;
+      }
+    }
+
+
+
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
