@@ -1,0 +1,62 @@
+name: ATS browser application worker
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ats-browser-application-worker
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # The project URL is not a credential; allow an explicit secret override
+      # for migrations or future project moves.
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://jlsoiujwcjgmvijcmvas.supabase.co' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      MAX_TASKS: '5'
+      PLAYWRIGHT_HEADLESS: 'true'
+
+    steps:
+      - name: Check worker credentials
+        id: creds
+        shell: bash
+        run: |
+          if [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ATS worker is disabled until the SUPABASE_SERVICE_ROLE_KEY repository secret is configured."
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.configured == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        if: steps.creds.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install app dependencies
+        if: steps.creds.outputs.configured == 'true'
+        run: npm ci
+
+      - name: Install pinned Playwright runtime
+        if: steps.creds.outputs.configured == 'true'
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+
+      - name: Process queued ATS applications
+        if: steps.creds.outputs.configured == 'true'
+        run: node scripts/ats-browser-worker.mjs
