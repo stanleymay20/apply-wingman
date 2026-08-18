@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Playwright worker
+worker/node_modules
