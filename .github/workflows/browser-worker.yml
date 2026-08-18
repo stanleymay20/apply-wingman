@@ -1,0 +1,70 @@
+# Scheduled Playwright worker that finishes queued public ATS application forms.
+#
+# Required repository secrets:
+#   BROWSER_WORKER_TOKEN     – must equal the backend secret of the same name
+#   SUPABASE_FUNCTIONS_URL   – e.g. https://<project-ref>.functions.supabase.co
+#
+# Without both, the job skips with a notice instead of failing.
+# The worker never bypasses CAPTCHAs and never invents answers; anything it
+# cannot complete safely comes back as manual_action_required in the app.
+
+name: Browser application worker
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Applications to attempt in this run (1-10)'
+        required: false
+        default: '3'
+
+concurrency:
+  group: browser-application-worker
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BROWSER_WORKER_TOKEN: ${{ secrets.BROWSER_WORKER_TOKEN }}
+      SUPABASE_FUNCTIONS_URL: ${{ secrets.SUPABASE_FUNCTIONS_URL }}
+      WORKER_BATCH_SIZE: ${{ github.event.inputs.batch_size || '3' }}
+      WORKER_ID: gha-${{ github.run_id }}
+    steps:
+      - name: Check credentials
+        id: creds
+        run: |
+          if [ -n "$BROWSER_WORKER_TOKEN" ] && [ -n "$SUPABASE_FUNCTIONS_URL" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::BROWSER_WORKER_TOKEN and/or SUPABASE_FUNCTIONS_URL not configured — skipping browser worker run."
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        if: steps.creds.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: worker
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: worker
+        run: npx playwright install --with-deps chromium
+
+      - name: Run worker
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: worker
+        run: npm start
