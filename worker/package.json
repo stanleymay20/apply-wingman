@@ -1,0 +1,19 @@
+{
+  "name": "apply-wingman-browser-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "External Playwright worker that completes public ATS application forms queued by Apply Wingman.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
