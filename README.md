@@ -1,73 +1,94 @@
-# Welcome to your Lovable project
+# Apply Wingman
 
-## Project info
+**AI-assisted job discovery, application tracking and ATS workflow automation**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Apply Wingman is the maintained implementation of the job-application automation project in this GitHub portfolio. It combines a React/Vite application, Supabase data and edge functions, and a Playwright browser worker for supported application flows.
 
-## How can I edit this code?
+The system is designed to automate repeatable parts of a job search while keeping unsupported, blocked or ambiguous application steps visible for human action.
 
-There are several ways of editing your application.
+## What the repository contains
 
-**Use Lovable**
+### Job discovery and tracking
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- job discovery and ingestion workflows;
+- application status tracking;
+- source/platform normalization;
+- recruiter-email extraction support;
+- posting availability checks and stalled-application recovery;
+- user-facing jobs, applications and settings views.
 
-Changes made via Lovable will be committed automatically to this repo.
+### ATS routing
 
-**Use your preferred IDE**
+The browser worker currently routes supported flows for:
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- Greenhouse;
+- Lever;
+- Ashby;
+- Workable;
+- Recruitee;
+- Personio;
+- SmartRecruiters;
+- Workday.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Generic form handling is used where appropriate, with a dedicated Workday adapter. Unsupported or blocked steps return for manual action rather than being silently treated as successful.
 
-Follow these steps:
+LinkedIn automation is deliberately excluded from the worker because authenticated automated applying conflicts with the platform constraints encoded by the project.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Application architecture
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+**Frontend:** React · TypeScript · Vite · Tailwind CSS · shadcn/ui
 
-# Step 3: Install the necessary dependencies.
-npm i
+**Backend:** Supabase · PostgreSQL · Deno Edge Functions
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+**Automation worker:** Node.js · TypeScript · Playwright
+
+**Validation/state:** Zod · TanStack Query
+
+## High-level workflow
+
+```text
+Job discovery / import
+        ↓
+Posting validation and normalization
+        ↓
+Application-method / ATS detection
+        ↓
+Supported automation or manual-action routing
+        ↓
+Attempt result and application tracking
+        ↓
+Human review / follow-up
+```
+
+## Local frontend setup
+
+```bash
+npm ci
+cp .env.example .env
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Required frontend variables are documented in `.env.example`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Never commit `.env`, provider credentials, database passwords or access tokens. If a credential has ever been committed to Git history, removing the file from the latest tree is not sufficient; rotate or revoke that credential separately.
 
-**Use GitHub Codespaces**
+## Quality checks
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+npm run lint
+npm run build
+```
 
-## What technologies are used for this project?
+The repository also contains dedicated workflows for the browser worker and Supabase deployment path.
 
-This project is built with:
+## Backend deployment note
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+The current backend is managed through Lovable Cloud. A GitHub merge alone does not prove that Supabase Edge Functions or database migrations have reached the live backend. Backend releases should be verified against the actual deployed runtime and migration state.
 
-## How can I deploy this project?
+## Automation boundary
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+Application automation is not equivalent to a confirmed job application. CAPTCHAs, authentication, anti-bot controls, unusual questions, site changes and incomplete form data can require human action. The system should record those states explicitly rather than fabricating completion.
 
-## Can I connect a custom domain to my Lovable project?
+## Repository lineage
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+`apply-wingman` is the canonical maintained repository for this project family. The older `JobAutoPilot` repository is retained only as historical lineage; its reachable current history no longer contains the application source.
