@@ -33,7 +33,10 @@ jobs:
         run: npm ci
 
       - name: Regenerate safe dependency resolutions
-        run: npm audit fix --force || true
+        run: |
+          npm audit fix || true
+          npm install --save-dev vite@8.3.0 @vitejs/plugin-react-swc@latest
+          npm audit fix || true
 
       - name: Require production audit
         run: npm audit --omit=dev --audit-level=moderate
