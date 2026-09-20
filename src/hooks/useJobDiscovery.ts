@@ -85,7 +85,7 @@ function generateExternalId(url: string, platform: string): string {
     indeed: /jk=([a-f0-9]+)/i,
     greenhouse: /\/jobs\/(\d+)/,
     lever: /\/([a-f0-9-]{36})/,
-    workday: /\/job\/([^\/]+)/,
+    workday: /\/job\/([^/]+)/,
   };
   
   const pattern = patterns[platform];
