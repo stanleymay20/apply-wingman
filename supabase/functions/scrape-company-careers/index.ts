@@ -155,7 +155,9 @@ serve(async (req) => {
         try {
           const testUrl = new URL(pattern, formattedUrl).toString();
           careerPages.push(testUrl);
-        } catch {}
+        } catch {
+          continue;
+        }
       }
     }
 
