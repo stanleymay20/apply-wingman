@@ -268,7 +268,7 @@ export function useAutoApply() {
         );
         
         // Use forced method or detected method
-        let applyMethod = forceMethod || detectApplyMethod(job.source_url, job.source_platform);
+        const applyMethod = forceMethod || detectApplyMethod(job.source_url, job.source_platform);
         
         // Warn if using email when ATS is available
         if (applyMethod === "email" && !detectedMethod.requiresEmail) {
