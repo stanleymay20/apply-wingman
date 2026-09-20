@@ -90,7 +90,7 @@ export const skillSchema = z
   .trim()
   .min(1, "Skill cannot be empty")
   .max(50, "Skill must be less than 50 characters")
-  .regex(/^[a-zA-Z0-9\s\-\+\#\.]+$/, "Invalid characters in skill name");
+  .regex(/^[-a-zA-Z0-9\s+#.]+$/, "Invalid characters in skill name");
 
 // Location validation
 export const locationSchema = z
